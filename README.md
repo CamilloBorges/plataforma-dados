@@ -23,7 +23,7 @@ Documentação e decisões: nota "Plataforma de Dados Bomgado" no cofre do Obsid
 1. Serviço Compose, fonte Git, arquivo `docker-compose.yml` (raiz; o EasyPanel grava o `.env` na raiz e o compose só lê o `.env` da própria pasta).
 2. Ambiente: variáveis do `.env.example`.
 3. Domínio: serviço `airflow-apiserver`, porta 8080 (criar o domínio **antes** do deploy; ver o gotcha na nota "Infraestrutura Banco Legado PlenoKW").
-4. Senha da interface: `docker exec <apiserver> cat /opt/airflow/auth/passwords.json`.
+4. Login: só pelo Cloudflare Access (Entra ID) em `airflow.bomgado.net`; o Airflow não tem senha própria (ver o comentário no compose).
 
 ## Testes
 ```
