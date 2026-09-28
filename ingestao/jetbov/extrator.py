@@ -110,7 +110,8 @@ def executar(db_url: str, usuario: str, senha: str) -> dict:
 
         try:
             sessao = requests.Session()
-            sessao.headers["Accept"] = "application/json"
+            sessao.headers["Content-Type"] = "application/json"
+            sessao.headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36"  
             login(sessao, usuario, senha)
             for endpoint in CADASTROS:
                 log.info("JetBov: %s", endpoint)
