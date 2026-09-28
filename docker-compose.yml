@@ -4,47 +4,77 @@
 # e a interface do Airflow pelo túnel da Cloudflare (serviço "airflow-apiserver", porta 8080).
 #
 # Pensado para o VPS de 8 GB compartilhado: memória limitada por serviço, paralelismo baixo,
-# sem Celery/Redis. Tudo configurável por variáveis de ambiente (ver .env.example).
+# sem Celery/Redis.
+#
+# Segredos: vêm do Azure Key Vault (kv-bomgado-dados). No ambiente do EasyPanel ficam só as 4
+# variáveis de acesso ao cofre (ver .env.example). O serviço "segredos" é o único que fala com o
+# cofre; ele entrega a cada consumidor, num volume em memória exclusivo, só as senhas que ele usa,
+# e o com_segredos.sh do consumidor as carrega antes de iniciar o processo.
+# Nome no cofre = variável em minúsculas com hífen (POSTGRES_PASSWORD -> postgres-password).
 
 x-airflow: &airflow
   build:
     context: .
     dockerfile: orquestracao/Dockerfile
   restart: unless-stopped
+  entrypoint: ["sh", "/opt/airflow/com_segredos.sh", "sh", "/opt/airflow/entrypoint.sh"]
   environment: &airflow-env
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
     AIRFLOW__CORE__PARALLELISM: "2"
     AIRFLOW__CORE__MAX_ACTIVE_TASKS_PER_DAG: "2"
     AIRFLOW__CORE__LOAD_EXAMPLES: "false"
     AIRFLOW__CORE__DEFAULT_TIMEZONE: America/Sao_Paulo
-    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:?defina AIRFLOW_FERNET_KEY}
     AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-apiserver:8080/execution/
     # Login único pelo Cloudflare Access (Entra ID) em airflow.bomgado.net: o Airflow não pede
     # senha própria e trata todo acesso como admin. Seguro só porque não há porta publicada e o
     # único caminho externo é o túnel com Access. Não publicar a porta 8080 sem religar o login.
     AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_ALL_ADMINS: "true"
-    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:${AIRFLOW_DB_PASSWORD}@postgres:5432/airflow
-    AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET:?defina AIRFLOW_JWT_SECRET}
     AIRFLOW__API__WORKERS: "1"
     AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: "true"
-    # Conexão usada pelos extratores (schemas raw_*), com usuário próprio.
-    DADOS_DB_URL: postgresql://ingestao:${INGESTAO_DB_PASSWORD}@postgres:5432/dados
-    JETBOV_USER: ${JETBOV_USER:-}
-    JETBOV_PASSWORD: ${JETBOV_PASSWORD:-}
+    # Conexão do banco, Fernet, JWT e DADOS_DB_URL: montados em orquestracao/entrypoint.sh.
   volumes:
     - airflow-logs:/opt/airflow/logs
+    - segredos-airflow:/run/segredos:ro
   depends_on:
+    segredos:
+      condition: service_healthy
     airflow-init:
       condition: service_completed_successfully
 
 services:
+  # Único serviço com a credencial do cofre (só leitura). Um grupo SEGREDOS_<GRUPO> por
+  # consumidor: variáveis separadas por espaço, "?" = opcional. Ver infra/segredos/segredos.py.
+  segredos:
+    build: ./infra/segredos
+    restart: unless-stopped
+    environment:
+      KEYVAULT_URL: ${KEYVAULT_URL:?defina KEYVAULT_URL}
+      AZURE_TENANT_ID: ${AZURE_TENANT_ID:?defina AZURE_TENANT_ID}
+      AZURE_CLIENT_ID: ${AZURE_CLIENT_ID:?defina AZURE_CLIENT_ID}
+      AZURE_CLIENT_SECRET: ${AZURE_CLIENT_SECRET:?defina AZURE_CLIENT_SECRET}
+      SEGREDOS_POSTGRES: POSTGRES_PASSWORD AIRFLOW_DB_PASSWORD INGESTAO_DB_PASSWORD API_DB_PASSWORD MCP_DB_PASSWORD
+      SEGREDOS_AIRFLOW: AIRFLOW_DB_PASSWORD INGESTAO_DB_PASSWORD AIRFLOW_FERNET_KEY AIRFLOW_JWT_SECRET JETBOV_USER JETBOV_PASSWORD
+      SEGREDOS_API: API_DB_PASSWORD ENTRA_TENANT_ID ENTRA_AUDIENCE ENTRA_GROUP_ID?
+      SEGREDOS_MCP: MCP_DB_PASSWORD
+    volumes:
+      - segredos-postgres:/run/segredos/postgres
+      - segredos-airflow:/run/segredos/airflow
+      - segredos-api:/run/segredos/api
+      - segredos-mcp:/run/segredos/mcp
+    healthcheck:
+      test: ["CMD", "test", "-f", "/tmp/pronto"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
   postgres:
     image: postgres:17.11
     restart: unless-stopped
-    environment:
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD}
-      AIRFLOW_DB_PASSWORD: ${AIRFLOW_DB_PASSWORD:?defina AIRFLOW_DB_PASSWORD}
-      INGESTAO_DB_PASSWORD: ${INGESTAO_DB_PASSWORD:?defina INGESTAO_DB_PASSWORD}
+    entrypoint: ["sh", "/usr/local/bin/com_segredos.sh", "docker-entrypoint.sh"]
     command:
       - postgres
       - -c
@@ -58,6 +88,11 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./infra/postgres/initdb:/docker-entrypoint-initdb.d:ro
+      - ./infra/segredos/com_segredos.sh:/usr/local/bin/com_segredos.sh:ro
+      - segredos-postgres:/run/segredos:ro
+    depends_on:
+      segredos:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -h 127.0.0.1"]
       interval: 10s
@@ -72,13 +107,11 @@ services:
   db-setup:
     image: postgres:17.11
     restart: "no"
-    environment:
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      API_DB_PASSWORD: ${API_DB_PASSWORD:?defina API_DB_PASSWORD}
-      MCP_DB_PASSWORD: ${MCP_DB_PASSWORD:?defina MCP_DB_PASSWORD}
     volumes:
       - ./infra/postgres/setup.sh:/setup.sh:ro
-    entrypoint: ["sh", "/setup.sh"]
+      - ./infra/segredos/com_segredos.sh:/usr/local/bin/com_segredos.sh:ro
+      - segredos-postgres:/run/segredos:ro
+    entrypoint: ["sh", "/usr/local/bin/com_segredos.sh", "sh", "/setup.sh"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -128,11 +161,11 @@ services:
   dados-api:
     build: ./dados-api
     restart: unless-stopped
-    environment:
-      API_DB_PASSWORD: ${API_DB_PASSWORD}
-      ENTRA_TENANT_ID: ${ENTRA_TENANT_ID:?defina ENTRA_TENANT_ID}
-      ENTRA_AUDIENCE: ${ENTRA_AUDIENCE:?defina ENTRA_AUDIENCE}
-      ENTRA_GROUP_ID: ${ENTRA_GROUP_ID:-}
+    entrypoint: ["sh", "/usr/local/bin/com_segredos.sh"]
+    command: ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]
+    volumes:
+      - ./infra/segredos/com_segredos.sh:/usr/local/bin/com_segredos.sh:ro
+      - segredos-api:/run/segredos:ro
     depends_on:
       db-setup:
         condition: service_completed_successfully
@@ -151,8 +184,12 @@ services:
   mcp-sql:
     build: ./mcp-sql
     restart: unless-stopped
+    entrypoint: ["sh", "/usr/local/bin/com_segredos.sh"]
+    command: ["python", "server.py"]
+    volumes:
+      - ./infra/segredos/com_segredos.sh:/usr/local/bin/com_segredos.sh:ro
+      - segredos-mcp:/run/segredos:ro
     environment:
-      MCP_DB_PASSWORD: ${MCP_DB_PASSWORD}
       MCP_TRUSTED_HOSTS: ${MCP_TRUSTED_HOSTS:-dados-mcp.bomgado.net}
     depends_on:
       db-setup:
@@ -162,6 +199,19 @@ services:
         limits:
           memory: 256M
 
+# Segredos: tmpfs (só em memória, nunca no disco). Um volume por consumidor. O conteúdo some quando
+# nenhum contêiner o usa; o serviço "segredos" fica no ar justamente para mantê-lo.
+x-tmpfs: &tmpfs
+  driver: local
+  driver_opts:
+    type: tmpfs
+    device: tmpfs
+    o: size=64k,mode=0755
+
 volumes:
   postgres-data:
   airflow-logs:
+  segredos-postgres: *tmpfs
+  segredos-airflow: *tmpfs
+  segredos-api: *tmpfs
+  segredos-mcp: *tmpfs

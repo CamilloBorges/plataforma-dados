@@ -9,3 +9,6 @@ COPY ingestao /opt/airflow/ingestao
 COPY transformacao /opt/airflow/transformacao
 COPY orquestracao/dags /opt/airflow/dags
 ENV PYTHONPATH=/opt/airflow
+
+# Segredos vêm do serviço "segredos" (Azure Key Vault); ver docker-compose.yml.
+COPY infra/segredos/com_segredos.sh orquestracao/entrypoint.sh /opt/airflow/
