@@ -33,7 +33,7 @@ class SessaoFalsa:
 def test_login_poe_token_no_cabecalho():
     s = SessaoFalsa()
     extrator.login(s, "u", "p")
-    assert s.headers["Authorization"] == "Bearer abc"
+    assert s.headers["Authorization"] == "Token abc"
 
 
 def test_login_sem_token_falha():

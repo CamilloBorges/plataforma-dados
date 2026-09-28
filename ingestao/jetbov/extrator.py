@@ -70,7 +70,7 @@ def login(sessao: requests.Session, usuario: str, senha: str) -> None:
     token = corpo.get("Token") or corpo.get("token")
     if not token:
         raise RuntimeError(f"login sem token; chaves da resposta: {sorted(corpo)}")
-    sessao.headers["Authorization"] = f"Bearer {token}"
+    sessao.headers["Authorization"] = f"Token {token}"  # confirmado em 28/09: Bearer/JWT dão 401
 
 
 def buscar(sessao: requests.Session, endpoint: str, parametros: dict | None = None):
