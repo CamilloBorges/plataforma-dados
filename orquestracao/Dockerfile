@@ -6,5 +6,6 @@ COPY ingestao/requirements.txt /tmp/requirements-ingestao.txt
 RUN pip install --no-cache-dir -r /tmp/requirements-ingestao.txt
 
 COPY ingestao /opt/airflow/ingestao
+COPY transformacao /opt/airflow/transformacao
 COPY orquestracao/dags /opt/airflow/dags
 ENV PYTHONPATH=/opt/airflow

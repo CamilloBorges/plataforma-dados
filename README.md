@@ -9,8 +9,9 @@ Documentação e decisões: nota "Plataforma de Dados Bomgado" no cofre do Obsid
 | `infra/` | scripts de 1º boot do banco |
 | `ingestao/` | extratores por fonte (código Python puro, testável fora do Airflow) |
 | `orquestracao/` | imagem do Airflow e DAGs (só agendam e chamam a ingestão) |
-| `transformacao/` | dbt (a criar) |
-| `dados-api/` | gateway OData (a migrar do `pleno_db_legado`) |
+| `transformacao/` | views da API (`api/vw_*.sql`) materializadas como tabelas pelo Airflow; dbt depois |
+| `dados-api/` | gateway OData do Excel/Power BI (login Entra ID), lê `api.vw_*` |
+| `mcp-sql/` | MCP de SQL somente leitura (substitui o Directus/MCP pleno) |
 
 ## Bancos e usuários
 - `airflow` (usuário `airflow`): metadados do Airflow.

@@ -68,6 +68,21 @@ services:
         limits:
           memory: 1G
 
+  # Execução única a cada deploy: papéis, schemas e permissões (idempotente; ver o script).
+  db-setup:
+    image: postgres:17.11
+    restart: "no"
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      API_DB_PASSWORD: ${API_DB_PASSWORD:?defina API_DB_PASSWORD}
+      MCP_DB_PASSWORD: ${MCP_DB_PASSWORD:?defina MCP_DB_PASSWORD}
+    volumes:
+      - ./infra/postgres/setup.sh:/setup.sh:ro
+    entrypoint: ["sh", "/setup.sh"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   # Execução única a cada deploy: migra o banco de metadados do Airflow.
   airflow-init:
     <<: *airflow
@@ -76,6 +91,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      db-setup:
+        condition: service_completed_successfully
 
   airflow-apiserver:
     <<: *airflow
@@ -106,6 +123,44 @@ services:
       resources:
         limits:
           memory: 512M
+
+  # Gateway OData do Excel/Power BI (login do Entra ID). Domínio: dados-api.bomgado.net, porta 8000.
+  dados-api:
+    build: ./dados-api
+    restart: unless-stopped
+    environment:
+      API_DB_PASSWORD: ${API_DB_PASSWORD}
+      ENTRA_TENANT_ID: ${ENTRA_TENANT_ID:?defina ENTRA_TENANT_ID}
+      ENTRA_AUDIENCE: ${ENTRA_AUDIENCE:?defina ENTRA_AUDIENCE}
+      ENTRA_GROUP_ID: ${ENTRA_GROUP_ID:-}
+    depends_on:
+      db-setup:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  # MCP de SQL somente leitura (substitui o Directus/MCP pleno). Domínio: dados-mcp.bomgado.net,
+  # porta 8083, atrás do token de serviço do Cloudflare Access (como os demais MCPs).
+  mcp-sql:
+    build: ./mcp-sql
+    restart: unless-stopped
+    environment:
+      MCP_DB_PASSWORD: ${MCP_DB_PASSWORD}
+      MCP_TRUSTED_HOSTS: ${MCP_TRUSTED_HOSTS:-dados-mcp.bomgado.net}
+    depends_on:
+      db-setup:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        limits:
+          memory: 256M
 
 volumes:
   postgres-data:
