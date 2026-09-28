@@ -5,7 +5,8 @@ Documentação e decisões: nota "Plataforma de Dados Bomgado" no cofre do Obsid
 
 | Pasta | Conteúdo |
 |---|---|
-| `infra/` | compose do EasyPanel (Postgres 17 + Airflow 3) e scripts de 1º boot do banco |
+| `docker-compose.yml` | compose do EasyPanel (Postgres 17 + Airflow 3) |
+| `infra/` | scripts de 1º boot do banco |
 | `ingestao/` | extratores por fonte (código Python puro, testável fora do Airflow) |
 | `orquestracao/` | imagem do Airflow e DAGs (só agendam e chamam a ingestão) |
 | `transformacao/` | dbt (a criar) |
@@ -19,7 +20,7 @@ Documentação e decisões: nota "Plataforma de Dados Bomgado" no cofre do Obsid
 - **JetBov** (`ingestao/jetbov`): API do app web, login com o usuário do Camillo, só GET. DAG `jetbov_extracao`, diária às 04:30.
 
 ## Deploy (EasyPanel)
-1. Serviço Compose, fonte Git, arquivo `infra/docker-compose.yml`.
+1. Serviço Compose, fonte Git, arquivo `docker-compose.yml` (raiz; o EasyPanel grava o `.env` na raiz e o compose só lê o `.env` da própria pasta).
 2. Ambiente: variáveis do `.env.example`.
 3. Domínio: serviço `airflow-apiserver`, porta 8080 (criar o domínio **antes** do deploy; ver o gotcha na nota "Infraestrutura Banco Legado PlenoKW").
 4. Senha da interface: `docker exec <apiserver> cat /opt/airflow/auth/passwords.json`.
