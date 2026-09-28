@@ -154,6 +154,7 @@ def executar(db_url: str, usuario: str, senha: str) -> dict:
     """Extrai tudo e grava em raw_jetbov. Devolve {endpoint: nº de respostas gravadas}."""
     execucao = uuid.uuid4()
     contagem: dict[str, int] = {}
+    falhas: list[str] = []
     with psycopg.connect(db_url, autocommit=True) as conn:
         conn.execute(DDL)
         conn.execute("INSERT INTO raw_jetbov.execucao (id) VALUES (%s)", (execucao,))
@@ -184,17 +185,30 @@ def executar(db_url: str, usuario: str, senha: str) -> dict:
                     eventos[endpoint].extend(dados[chave])
 
             def ja_extraidos(endpoint, chave):
-                sql = "SELECT DISTINCT parametros->>%s FROM raw_jetbov.resposta WHERE endpoint = %s"
+                sql = ("SELECT DISTINCT parametros->>%s FROM raw_jetbov.resposta "
+                       "WHERE endpoint = %s AND NOT dados ? '_erro_http'")
                 return {linha[0] for linha in conn.execute(sql, (chave, endpoint))}
+
+            def detalhe(rotulo, parametros, caminho, query=None):
+                """Busca um item de detalhe. Erro 5xx do JetBov num item (ex.: animais de venda não
+                confirmada, 28/09) fica registrado e a carga segue; o resto derruba a execução."""
+                try:
+                    gravar(rotulo, parametros, buscar(sessao, caminho, query))
+                except requests.HTTPError as e:
+                    codigo = e.response.status_code if e.response is not None else None
+                    if codigo is None or codigo < 500:
+                        raise
+                    gravar(rotulo, parametros, {"_erro_http": codigo})
+                    falhas.append(f"{rotulo} {json.dumps(parametros)}: HTTP {codigo}")
+                    log.warning("JetBov: %s %s deu HTTP %s; seguindo", rotulo, parametros, codigo)
+                time.sleep(PAUSA)
 
             # Detalhe da alimentação (tela Visualizar): animais servidos e ração usada, com a
             # ordem de produção da batida (procedures[].production_order).
             ids = nutricoes_a_detalhar(eventos["nutritionEvents/"], ja_extraidos("nutritionEvents/animalsList", "id"))
             log.info("JetBov: detalhe de %d eventos de alimentação", len(ids))
             for evento_id in ids:
-                gravar("nutritionEvents/animalsList", {"id": evento_id},
-                       buscar(sessao, f"nutritionEvents/{evento_id}/animalsList/"))
-                time.sleep(PAUSA)
+                detalhe("nutritionEvents/animalsList", {"id": evento_id}, f"nutritionEvents/{evento_id}/animalsList/")
 
             # Estoque: saldo por estoque e histórico de cada item. Nas saídas dos insumos com
             # motivo "Nova ração: ...; Batida" está o consumo efetivo por batida
@@ -203,28 +217,29 @@ def executar(db_url: str, usuario: str, senha: str) -> dict:
                 saldo = buscar(sessao, f"stocks/{estoque['id']}/balance/")
                 gravar("stocks/balance", {"stock": estoque["id"]}, saldo)
                 for stock_id, item_id in itens_do_saldo(saldo):
-                    gravar("stocks/items/histories", {"stock": stock_id, "item": item_id},
-                           buscar(sessao, f"stocks/{stock_id}/items/{item_id}/histories/"))
-                    time.sleep(PAUSA)
+                    detalhe("stocks/items/histories", {"stock": stock_id, "item": item_id},
+                            f"stocks/{stock_id}/items/{item_id}/histories/")
 
             # Animais de cada venda (lote de abate): o animal/ geral não traz o id da venda.
             for venda in cadastros["sale/"]:
                 parametros = {"sale_id": venda["id"]}
-                gravar("animal/?sale_id", parametros, buscar(sessao, "animal/", parametros))
+                detalhe("animal/?sale_id", parametros, "animal/", parametros)
 
             # Vida do animal (lotes, pesagens, sanitário por animal), pela tela animalInfo.
             ids = historicos_a_buscar(cadastros["animal/"], ja_extraidos("animalshistory/", "unique_id"))
             log.info("JetBov: animalshistory de %d animais", len(ids))
             for unique_id in ids:
-                gravar("animalshistory/", {"unique_id": unique_id}, buscar(sessao, f"animalshistory/{unique_id}/"))
-                time.sleep(PAUSA)
+                detalhe("animalshistory/", {"unique_id": unique_id}, f"animalshistory/{unique_id}/")
         except Exception as e:
             conn.execute(
                 "UPDATE raw_jetbov.execucao SET fim = now(), status = 'erro', erro = %s WHERE id = %s",
                 (repr(e)[:2000], execucao),
             )
             raise
-        conn.execute("UPDATE raw_jetbov.execucao SET fim = now(), status = 'ok' WHERE id = %s", (execucao,))
+        conn.execute(
+            "UPDATE raw_jetbov.execucao SET fim = now(), status = %s, erro = %s WHERE id = %s",
+            ("parcial" if falhas else "ok", "\n".join(falhas)[:4000] or None, execucao),
+        )
     return contagem
 
 
