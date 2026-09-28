@@ -35,11 +35,15 @@ CADASTROS = [
 
 # Eventos paginados: endpoint -> chave da lista na resposta. Respondem com
 # meta{total_pages}; a tela só mostra confirmed=False, então buscamos os dois.
+# endpoint -> (chave da lista na resposta, aceita o filtro confirmed?).
+# 28/09: healthEvents respeita confirmed (a tela só mostra False); nutritionEvents ignora o
+# filtro (True e False devolvem a mesma lista) e a paginação não tem ordem estável (páginas de
+# 100 repetiram registros e perderam 90 de 1.213). Por isso páginas grandes + conferência de IDs.
 PAGINADOS = {
-    "healthEvents/": "health_events",
-    "nutritionEvents/": "nutritions",
+    "healthEvents/": ("health_events", True),
+    "nutritionEvents/": ("nutritions", False),
 }
-POR_PAGINA = 100
+POR_PAGINA = 5000
 
 log = logging.getLogger(__name__)
 
@@ -79,18 +83,27 @@ def buscar(sessao: requests.Session, endpoint: str, parametros: dict | None = No
     return r.json()
 
 
-def paginas(sessao: requests.Session, endpoint: str, chave: str):
-    """Gera (parametros, dados) de todas as páginas, confirmados e não confirmados."""
-    for confirmado in ("True", "False"):
-        pagina, total = 1, 1
-        while pagina <= total:
-            parametros = {"confirmed": confirmado, "page": pagina, "per_page": POR_PAGINA}
+def paginas(sessao: requests.Session, endpoint: str, chave: str, usa_confirmado: bool):
+    """Gera (parametros, dados) de todas as páginas. Falha se os IDs distintos não baterem
+    com o total informado pela API (evita gravar lista incompleta sem perceber)."""
+    filtros = [{"confirmed": "True"}, {"confirmed": "False"}] if usa_confirmado else [{}]
+    ids, total_api = set(), 0
+    for filtro in filtros:
+        pagina, total_paginas = 1, 1
+        while pagina <= total_paginas:
+            parametros = {**filtro, "page": pagina, "per_page": POR_PAGINA}
             dados = buscar(sessao, endpoint, parametros)
             if chave not in dados:
                 raise RuntimeError(f"{endpoint}: resposta sem '{chave}' (chaves: {sorted(dados)})")
-            total = dados.get("meta", {}).get("total_pages", 1)
+            meta = dados.get("meta", {})
+            total_paginas = meta.get("total_pages", 1)
+            if pagina == 1:
+                total_api += meta.get("total_results", 0)
+            ids.update(item.get("id") for item in dados[chave])
             yield parametros, dados
             pagina += 1
+    if len(ids) != total_api:
+        raise RuntimeError(f"{endpoint}: {len(ids)} IDs distintos, mas a API informa {total_api}")
 
 
 def executar(db_url: str, usuario: str, senha: str) -> dict:
@@ -116,8 +129,8 @@ def executar(db_url: str, usuario: str, senha: str) -> dict:
             for endpoint in CADASTROS:
                 log.info("JetBov: %s", endpoint)
                 gravar(endpoint, None, buscar(sessao, endpoint))
-            for endpoint, chave in PAGINADOS.items():
-                for parametros, dados in paginas(sessao, endpoint, chave):
+            for endpoint, (chave, usa_confirmado) in PAGINADOS.items():
+                for parametros, dados in paginas(sessao, endpoint, chave, usa_confirmado):
                     log.info("JetBov: %s %s", endpoint, parametros)
                     gravar(endpoint, parametros, dados)
         except Exception as e:
