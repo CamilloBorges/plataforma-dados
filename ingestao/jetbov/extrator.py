@@ -32,14 +32,14 @@ CADASTROS = [
     "finance_account/",
     "semenRegistry/",
     "reports/weight/",
+    "mfg/recipe/",  # formulação das rações (recipeitem_set = ingredientes)
+    "items/",  # cadastro de insumos/produtos
 ]
 
-# Eventos paginados: endpoint -> chave da lista na resposta. Respondem com
-# meta{total_pages}; a tela só mostra confirmed=False, então buscamos os dois.
-# endpoint -> (chave da lista na resposta, aceita o filtro confirmed?).
+# Eventos paginados: endpoint -> (chave da lista na resposta, aceita o filtro confirmed?).
 # 28/09: healthEvents respeita confirmed (a tela só mostra False); nutritionEvents ignora o
-# filtro (True e False devolvem a mesma lista) e a paginação não tem ordem estável (páginas de
-# 100 repetiram registros e perderam 90 de 1.213). Por isso páginas grandes + conferência de IDs.
+# filtro `confirmed` (a tela usa filter{confirmed}) e sem ordenação a paginação repetia e perdia
+# registros. Por isso sort[]=id, páginas grandes e conferência de IDs.
 PAGINADOS = {
     "healthEvents/": ("health_events", True),
     "nutritionEvents/": ("nutritions", False),
@@ -93,7 +93,7 @@ def paginas(sessao: requests.Session, endpoint: str, chave: str, usa_confirmado:
     for filtro in filtros:
         pagina, total_paginas = 1, 1
         while pagina <= total_paginas:
-            parametros = {**filtro, "page": pagina, "per_page": POR_PAGINA}
+            parametros = {**filtro, "page": pagina, "per_page": POR_PAGINA, "sort[]": "id"}
             dados = buscar(sessao, endpoint, parametros)
             if chave not in dados:
                 raise RuntimeError(f"{endpoint}: resposta sem '{chave}' (chaves: {sorted(dados)})")
@@ -117,6 +117,20 @@ def historicos_a_buscar(animais: list[dict], ja_extraidos: set[str]) -> list[str
     """unique_id dos animais cuja vida (animalshistory) precisa ser buscada: os ativos, que ainda
     mudam, e os que nunca foram extraídos. Vendido/morto já extraído não muda mais."""
     return [a["unique_id"] for a in animais if ativo(a) or a["unique_id"] not in ja_extraidos]
+
+
+def nutricoes_a_detalhar(eventos: list[dict], ja_extraidos: set[str]) -> list:
+    """Eventos de alimentação cujo detalhe (animais + ração) precisa ser buscado: os não
+    confirmados, que ainda podem mudar, e os nunca extraídos."""
+    return [e["id"] for e in eventos if not e.get("confirmed") or str(e["id"]) not in ja_extraidos]
+
+
+def itens_do_saldo(saldo) -> list[tuple]:
+    """(estoque, item) de cada linha de stocks/<id>/balance/."""
+    linhas = saldo if isinstance(saldo, list) else saldo.get("results", [])
+    if linhas and not {"stock", "item"} <= set(linhas[0]):
+        raise RuntimeError(f"stocks balance: formato inesperado (chaves: {sorted(linhas[0])})")
+    return [(linha["stock"], linha["item"]) for linha in linhas]
 
 
 def executar(db_url: str, usuario: str, senha: str) -> dict:
@@ -144,10 +158,37 @@ def executar(db_url: str, usuario: str, senha: str) -> dict:
                 log.info("JetBov: %s", endpoint)
                 cadastros[endpoint] = buscar(sessao, endpoint)
                 gravar(endpoint, None, cadastros[endpoint])
+            eventos = {}
             for endpoint, (chave, usa_confirmado) in PAGINADOS.items():
+                eventos[endpoint] = []
                 for parametros, dados in paginas(sessao, endpoint, chave, usa_confirmado):
                     log.info("JetBov: %s %s", endpoint, parametros)
                     gravar(endpoint, parametros, dados)
+                    eventos[endpoint].extend(dados[chave])
+
+            def ja_extraidos(endpoint, chave):
+                sql = "SELECT DISTINCT parametros->>%s FROM raw_jetbov.resposta WHERE endpoint = %s"
+                return {linha[0] for linha in conn.execute(sql, (chave, endpoint))}
+
+            # Detalhe da alimentação (tela Visualizar): animais servidos e ração usada, com a
+            # ordem de produção da batida (procedures[].production_order).
+            ids = nutricoes_a_detalhar(eventos["nutritionEvents/"], ja_extraidos("nutritionEvents/animalsList", "id"))
+            log.info("JetBov: detalhe de %d eventos de alimentação", len(ids))
+            for evento_id in ids:
+                gravar("nutritionEvents/animalsList", {"id": evento_id},
+                       buscar(sessao, f"nutritionEvents/{evento_id}/animalsList/"))
+                time.sleep(PAUSA)
+
+            # Estoque: saldo por estoque e histórico de cada item. Nas saídas dos insumos com
+            # motivo "Nova ração: ...; Batida" está o consumo efetivo por batida
+            # (production_order_id liga à ração servida no evento de alimentação).
+            for estoque in cadastros["stocks/"]:
+                saldo = buscar(sessao, f"stocks/{estoque['id']}/balance/")
+                gravar("stocks/balance", {"stock": estoque["id"]}, saldo)
+                for stock_id, item_id in itens_do_saldo(saldo):
+                    gravar("stocks/items/histories", {"stock": stock_id, "item": item_id},
+                           buscar(sessao, f"stocks/{stock_id}/items/{item_id}/histories/"))
+                    time.sleep(PAUSA)
 
             # Animais de cada venda (lote de abate): o animal/ geral não traz o id da venda.
             for venda in cadastros["sale/"]:
@@ -155,13 +196,7 @@ def executar(db_url: str, usuario: str, senha: str) -> dict:
                 gravar("animal/?sale_id", parametros, buscar(sessao, "animal/", parametros))
 
             # Vida do animal (lotes, pesagens, sanitário por animal), pela tela animalInfo.
-            ja_extraidos = {
-                linha[0]
-                for linha in conn.execute(
-                    "SELECT DISTINCT parametros->>'unique_id' FROM raw_jetbov.resposta WHERE endpoint = 'animalshistory/'"
-                )
-            }
-            ids = historicos_a_buscar(cadastros["animal/"], ja_extraidos)
+            ids = historicos_a_buscar(cadastros["animal/"], ja_extraidos("animalshistory/", "unique_id"))
             log.info("JetBov: animalshistory de %d animais", len(ids))
             for unique_id in ids:
                 gravar("animalshistory/", {"unique_id": unique_id}, buscar(sessao, f"animalshistory/{unique_id}/"))

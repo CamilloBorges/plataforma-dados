@@ -55,7 +55,7 @@ def test_paginas_com_filtro_percorre_confirmados_e_nao_confirmados():
 def test_paginas_sem_filtro_nao_manda_confirmed():
     s = SessaoFalsa({None: [[1, 2, 3]]})
     list(extrator.paginas(s, "nutritionEvents/", "health_events", False))
-    assert s.chamadas == [{"page": 1, "per_page": extrator.POR_PAGINA}]
+    assert s.chamadas == [{"page": 1, "per_page": extrator.POR_PAGINA, "sort[]": "id"}]
 
 
 def test_paginas_falha_se_ids_nao_baterem_com_o_total():
@@ -80,3 +80,24 @@ def test_historicos_busca_ativos_e_os_nunca_extraidos():
     ]
     ja = {"ativo-ja-extraido", "vendido-ja-extraido"}
     assert extrator.historicos_a_buscar(animais, ja) == ["ativo-ja-extraido", "vendido-novo", "morto-novo"]
+
+
+def test_nutricoes_detalha_nao_confirmadas_e_nunca_extraidas():
+    eventos = [
+        {"id": 1, "confirmed": True},   # já extraído e confirmado: não muda mais
+        {"id": 2, "confirmed": False},  # já extraído, mas ainda aberto
+        {"id": 3, "confirmed": True},   # novo
+    ]
+    assert extrator.nutricoes_a_detalhar(eventos, {"1", "2"}) == [2, 3]
+
+
+def test_itens_do_saldo_aceita_lista_e_results():
+    linhas = [{"stock": 10, "item": 5, "quantity": 1}]
+    assert extrator.itens_do_saldo(linhas) == [(10, 5)]
+    assert extrator.itens_do_saldo({"results": linhas}) == [(10, 5)]
+    assert extrator.itens_do_saldo([]) == []
+
+
+def test_itens_do_saldo_falha_com_formato_inesperado():
+    with pytest.raises(RuntimeError, match="formato inesperado"):
+        extrator.itens_do_saldo([{"id": 1}])
