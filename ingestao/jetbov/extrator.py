@@ -41,8 +41,15 @@ CADASTROS = [
 # filtro `confirmed` (a tela usa filter{confirmed}) e sem ordenação a paginação repetia e perdia
 # registros. Por isso sort[]=id, páginas grandes e conferência de IDs.
 PAGINADOS = {
-    "healthEvents/": ("health_events", True),
-    "nutritionEvents/": ("nutritions", False),
+    "healthEvents/": ("health_events", True, {}),
+    "nutritionEvents/": ("nutritions", False, {}),
+    # v2 (dynamic-rest): o único jeito achado de ler lotes EXCLUÍDOS (exclusão lógica; herd/<id>/
+    # dá 404). Cada animal vem com o último lote completo, inclusive pastureArea = id do piquete.
+    # Limitado a 500 por página pela API. Não existe rota de histórico de lote (herd_history).
+    "v2/animal/": ("animals", False, {"include[]": [
+        "herd.deleted", "herd.created_on", "herd.updated_on", "herd.pastureArea",
+        "herd.description", "herd.gender", "herd.transferHerd", "herd.deathHerd",
+    ]}),
 }
 POR_PAGINA = 5000
 PAUSA = 0.2  # segundos entre chamadas em série (animalshistory: ~1.000 na 1ª carga)
@@ -85,7 +92,7 @@ def buscar(sessao: requests.Session, endpoint: str, parametros: dict | None = No
     return r.json()
 
 
-def paginas(sessao: requests.Session, endpoint: str, chave: str, usa_confirmado: bool):
+def paginas(sessao: requests.Session, endpoint: str, chave: str, usa_confirmado: bool, extras: dict | None = None):
     """Gera (parametros, dados) de todas as páginas. Falha se os IDs distintos não baterem
     com o total informado pela API (evita gravar lista incompleta sem perceber)."""
     filtros = [{"confirmed": "True"}, {"confirmed": "False"}] if usa_confirmado else [{}]
@@ -93,7 +100,7 @@ def paginas(sessao: requests.Session, endpoint: str, chave: str, usa_confirmado:
     for filtro in filtros:
         pagina, total_paginas = 1, 1
         while pagina <= total_paginas:
-            parametros = {**filtro, "page": pagina, "per_page": POR_PAGINA, "sort[]": "id"}
+            parametros = {**filtro, **(extras or {}), "page": pagina, "per_page": POR_PAGINA, "sort[]": "id"}
             dados = buscar(sessao, endpoint, parametros)
             if chave not in dados:
                 raise RuntimeError(f"{endpoint}: resposta sem '{chave}' (chaves: {sorted(dados)})")
@@ -159,9 +166,9 @@ def executar(db_url: str, usuario: str, senha: str) -> dict:
                 cadastros[endpoint] = buscar(sessao, endpoint)
                 gravar(endpoint, None, cadastros[endpoint])
             eventos = {}
-            for endpoint, (chave, usa_confirmado) in PAGINADOS.items():
+            for endpoint, (chave, usa_confirmado, extras) in PAGINADOS.items():
                 eventos[endpoint] = []
-                for parametros, dados in paginas(sessao, endpoint, chave, usa_confirmado):
+                for parametros, dados in paginas(sessao, endpoint, chave, usa_confirmado, extras):
                     log.info("JetBov: %s %s", endpoint, parametros)
                     gravar(endpoint, parametros, dados)
                     eventos[endpoint].extend(dados[chave])

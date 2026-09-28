@@ -101,3 +101,9 @@ def test_itens_do_saldo_aceita_lista_e_results():
 def test_itens_do_saldo_falha_com_formato_inesperado():
     with pytest.raises(RuntimeError, match="formato inesperado"):
         extrator.itens_do_saldo([{"id": 1}])
+
+
+def test_paginas_repassa_parametros_extras():
+    s = SessaoFalsa({None: [[1]]})
+    list(extrator.paginas(s, "v2/animal/", "health_events", False, {"include[]": ["herd.deleted"]}))
+    assert s.chamadas[0]["include[]"] == ["herd.deleted"]
