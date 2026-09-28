@@ -48,16 +48,17 @@ def conectar():
 
 
 def esquema():
-    """{view: [(coluna, tipo, precisão, escala)]} — só api.vw_* com chave primária."""
+    """{view: [(coluna, tipo, precisão, escala)]} — só api.vw_* com chave primária.
+    A chave vem do pg_index: information_schema.table_constraints esconde as restrições de quem
+    só tem SELECT (caso do api_leitura), e aí nenhuma view apareceria."""
     with conectar() as c, c.cursor() as cur:
         cur.execute(r"""SELECT c.table_name t, c.column_name col, c.data_type tipo,
                                c.numeric_precision p, c.numeric_scale s
                         FROM information_schema.columns c
-                        JOIN information_schema.table_constraints k
-                          ON k.table_schema = c.table_schema AND k.table_name = c.table_name
-                         AND k.constraint_type = 'PRIMARY KEY'
                         WHERE c.table_schema = 'api' AND c.table_name LIKE 'vw\_%'
                           AND c.table_name NOT LIKE '%\_\_novo'
+                          AND EXISTS (SELECT 1 FROM pg_index i WHERE i.indisprimary
+                                      AND i.indrelid = format('%I.%I', c.table_schema, c.table_name)::regclass)
                         ORDER BY c.table_name, c.ordinal_position""")
         saida = {}
         for r in cur.fetchall():
