@@ -69,3 +69,14 @@ def test_paginas_falha_se_chave_mudar():
     s = SessaoFalsa({None: [[1]]})
     with pytest.raises(RuntimeError, match="resposta sem"):
         list(extrator.paginas(s, "nutritionEvents/", "outra_chave", False))
+
+
+def test_historicos_busca_ativos_e_os_nunca_extraidos():
+    animais = [
+        {"unique_id": "ativo-ja-extraido"},
+        {"unique_id": "vendido-ja-extraido", "sold": True},
+        {"unique_id": "vendido-novo", "sold": True},
+        {"unique_id": "morto-novo", "dead": True},
+    ]
+    ja = {"ativo-ja-extraido", "vendido-ja-extraido"}
+    assert extrator.historicos_a_buscar(animais, ja) == ["ativo-ja-extraido", "vendido-novo", "morto-novo"]
