@@ -107,3 +107,20 @@ def test_paginas_repassa_parametros_extras():
     s = SessaoFalsa({None: [[1]]})
     list(extrator.paginas(s, "v2/animal/", "health_events", False, {"include[]": ["herd.deleted"]}))
     assert s.chamadas[0]["include[]"] == ["herd.deleted"]
+
+
+def test_paginas_segue_sem_ordenar_se_api_recusar_sort():
+    import requests
+
+    class Recusa(Resposta):
+        status_code = 400
+
+        def raise_for_status(self):
+            raise requests.HTTPError("400", response=self)
+
+    s = SessaoFalsa({None: [[1, 2], [3]]})
+    get_original = s.get
+    s.get = lambda url, params, timeout: Recusa({}) if "sort[]" in params else get_original(url, params, timeout)
+    resultado = list(extrator.paginas(s, "nutritionEvents/", "health_events", False))
+    assert [p["page"] for p, _ in resultado] == [1, 2]
+    assert all("sort[]" not in p for p, _ in resultado)

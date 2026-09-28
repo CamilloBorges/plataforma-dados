@@ -97,11 +97,21 @@ def paginas(sessao: requests.Session, endpoint: str, chave: str, usa_confirmado:
     com o total informado pela API (evita gravar lista incompleta sem perceber)."""
     filtros = [{"confirmed": "True"}, {"confirmed": "False"}] if usa_confirmado else [{}]
     ids, total_api = set(), 0
+    ordenar = True  # 28/09: nutritionEvents recusa sort[]=id (400); aí segue sem ordenar
     for filtro in filtros:
         pagina, total_paginas = 1, 1
         while pagina <= total_paginas:
-            parametros = {**filtro, **(extras or {}), "page": pagina, "per_page": POR_PAGINA, "sort[]": "id"}
-            dados = buscar(sessao, endpoint, parametros)
+            parametros = {**filtro, **(extras or {}), "page": pagina, "per_page": POR_PAGINA}
+            if ordenar:
+                parametros["sort[]"] = "id"
+            try:
+                dados = buscar(sessao, endpoint, parametros)
+            except requests.HTTPError as e:
+                if not ordenar or e.response is None or e.response.status_code != 400:
+                    raise
+                log.warning("JetBov: %s recusou sort[]=id; seguindo sem ordenar", endpoint)
+                ordenar = False
+                continue
             if chave not in dados:
                 raise RuntimeError(f"{endpoint}: resposta sem '{chave}' (chaves: {sorted(dados)})")
             meta = dados.get("meta", {})
