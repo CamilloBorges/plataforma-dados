@@ -18,7 +18,7 @@ import jwt
 import psycopg
 from psycopg.rows import dict_row
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 
 from odata_filter import FiltroInvalido, traduzir
 
@@ -225,7 +225,6 @@ def saude():
 
 
 @app.get("/")
-def inicio(request: Request):
-    """Quem abre o domínio no navegador vê como usar (o feed pede login do Entra, que o navegador não faz)."""
-    return {"servico": "Dados Bomgado (OData v4, somente leitura)", "feed": base(request),
-            "como_usar": "Excel ou Power BI: Obter Dados > De Feed OData > cole o feed > Conta organizacional"}
+def inicio():
+    """A raiz leva ao feed: https://dados-api.bomgado.net funciona como https://dados-api.bomgado.net/odata."""
+    return RedirectResponse("/odata", status_code=307)
