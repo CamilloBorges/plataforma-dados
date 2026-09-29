@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from airflow.sdk import dag, task
 
 from agenda import schedule, sufixo
-from transformacao.materializar import materializar, views
+from transformacao.materializar import materializar, remover_orfas, views
 
 
 def criar_dag(agenda: str, nomes: list[str]):
@@ -33,6 +33,24 @@ def criar_dag(agenda: str, nomes: list[str]):
 
     return _dag()
 
+
+@dag(
+    dag_id="api_views_limpeza",
+    schedule="0 4 * * *",  # 04:00: apaga as api.vw_* cujo .sql saiu do repositório
+    start_date=datetime(2026, 9, 28),
+    catchup=False,
+    max_active_runs=1,
+    tags=["transformacao", "api"],
+)
+def api_views_limpeza():
+    @task
+    def remover() -> list[str]:
+        return remover_orfas(os.environ["DADOS_DB_URL"])
+
+    remover()
+
+
+api_views_limpeza()
 
 _por_agenda: dict[str, list[str]] = {}
 for _nome, _agenda in views().items():
