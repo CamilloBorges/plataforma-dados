@@ -18,7 +18,7 @@ def criar_dag(agenda: str):
     @dag(
         dag_id=f"logus_{nome}",
         schedule=schedule(agenda),
-        start_date=datetime(2026, 9, 30),
+        start_date=datetime(2026, 9, 28),
         catchup=False,
         max_active_runs=1,
         dagrun_timeout=timedelta(minutes=30),
