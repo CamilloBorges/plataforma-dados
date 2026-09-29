@@ -60,7 +60,7 @@ services:
       SEGREDOS_AIRFLOW: AIRFLOW_DB_PASSWORD INGESTAO_DB_PASSWORD AIRFLOW_FERNET_KEY AIRFLOW_JWT_SECRET JETBOV_USER JETBOV_PASSWORD IFX_USER? IFX_PASSWORD?
       SEGREDOS_API: API_DB_PASSWORD ENTRA_TENANT_ID ENTRA_AUDIENCE ENTRA_GROUP_ID?
       SEGREDOS_MCP: MCP_DB_PASSWORD
-      SEGREDOS_DIRECTUS: DIRECTUS_DB_PASSWORD? DIRECTUS_SECRET? DIRECTUS_ADMIN_PASSWORD?
+      SEGREDOS_DIRECTUS: DIRECTUS_DB_PASSWORD? DIRECTUS_SECRET? DIRECTUS_ADMIN_PASSWORD? DIRECTUS_ENTRA_CLIENT_ID? DIRECTUS_ENTRA_CLIENT_SECRET? ENTRA_TENANT_ID? DIRECTUS_LICENSE_KEY?
     volumes:
       - segredos-postgres:/run/segredos/postgres
       - segredos-airflow:/run/segredos/airflow
@@ -217,7 +217,7 @@ x-tmpfs: &tmpfs
 
   # Directus: telas de configuração (de/para) sobre o schema "config", com o papel config_app
   # (não enxerga raw_*, legado nem api). Domínio config.bomgado.net, porta 8055, atrás do
-  # Cloudflare Access (Entra ID) + login próprio do Directus. Licença BSL: gratuita para
+  # Cloudflare Access (Entra ID) + login do Directus também pelo Entra (OpenID; ver inicio.sh). Licença BSL: gratuita para
   # organizações com menos de US$ 5 milhões/ano de receita+investimento.
   directus:
     image: directus/directus:12.4.1
@@ -231,7 +231,8 @@ x-tmpfs: &tmpfs
       DB_USER: config_app
       DB_SEARCH_PATH: config
       PUBLIC_URL: https://config.bomgado.net
-      ADMIN_EMAIL: camillo.cborges@bomgado.com
+      # Admin local de emergência (senha no cofre). O dia a dia é pelo login Entra (ver inicio.sh).
+      ADMIN_EMAIL: directus-admin@bomgado.com
       TELEMETRY: "false"
       WEBSOCKETS_ENABLED: "false"
       CACHE_ENABLED: "false"

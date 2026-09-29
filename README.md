@@ -27,7 +27,8 @@ Documentação e decisões: nota "Plataforma de Dados Bomgado" no cofre do Obsid
 ## Configurações de/para (Directus)
 - Schema `config`, dono `config_app` (o Directus não enxerga `raw_*`, `legado` nem `api`). As tabelas de negócio ficam versionadas em `infra/postgres/config/*.sql` e são criadas a cada deploy pelo `db-setup`. O Airflow (`ingestao`) e o MCP leem só essas tabelas, nunca as `directus_*`.
 - Tabela nova: criar o `.sql` em `infra/postgres/config/`, reimplantar e, no Directus, abrir a coleção para configurar a exibição.
-- Segredos no cofre: `directus-db-password`, `directus-secret`, `directus-admin-password` (sem eles o serviço não sobe, mas o resto da plataforma sim).
+- Segredos no cofre: `directus-db-password`, `directus-secret`, `directus-admin-password` (sem eles o serviço não sobe, mas o resto da plataforma sim). O admin local (`directus-admin@bomgado.com`) é só para emergência.
+- Login Entra (OpenID): `directus-entra-client-id`/`-secret` (app "Directus Config", callback `https://config.bomgado.net/auth/login/microsoft/callback`) + `entra-tenant-id`. **Desde a 12.0 o SSO exige licença**: a chave gratuita do Open Innovation Grant vai em `directus-license-key`. Sem chave, o provedor é ignorado (fica só o login local).
 - Primeira tabela: `config.depara_produto` (código interno do PlenoKW → `cdg_produto` do Logus).
 
 ## Deploy (EasyPanel)
