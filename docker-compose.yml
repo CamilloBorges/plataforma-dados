@@ -229,6 +229,11 @@ services:
       CACHE_ENABLED: "false"
       RATE_LIMITER_ENABLED: "true"
       MARKETPLACE_TRUST: sandbox
+      # A conexão do VPS com login.microsoftonline.com leva ~1,5 s e o "happy eyeballs" do Node
+      # desiste de cada endereço em 250 ms: sem isto a descoberta OpenID do Entra dá ETIMEDOUT.
+      NODE_OPTIONS: --no-network-family-autoselection --dns-result-order=ipv4first
+      # Se o Entra estiver fora, o Directus sobe mesmo assim (fica o login local de emergência).
+      AUTH_MICROSOFT_ISSUER_DISCOVERY_MUST_SUCCEED: "false"
     volumes:
       - ./infra/segredos/com_segredos.sh:/usr/local/bin/com_segredos.sh:ro
       - ./infra/directus/inicio.sh:/usr/local/bin/inicio.sh:ro
