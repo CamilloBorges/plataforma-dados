@@ -6,6 +6,9 @@
 #   ingestao     dono dos schemas raw_* e api (extratores e materialização das views)
 #   api_leitura  só SELECT no schema api (gateway OData do Excel)
 #   mcp_leitura  só SELECT em api, legado e raw_* (MCP de SQL do Claude/Copilot)
+#   config_app   dono do schema config (Directus: tabelas de sistema directus_* e as de de/para).
+#                O ingestao e o mcp_leitura leem só as tabelas de de/para (nunca as directus_*,
+#                que têm usuários e hashes de senha); a permissão é reaplicada a cada deploy.
 # O schema legado (cópia única do PlenoKW feita com pgloader em 28/09/2026) pertence ao postgres.
 set -eu
 export PGPASSWORD="$POSTGRES_PASSWORD"
@@ -40,4 +43,23 @@ DO $$ BEGIN
   END IF;
 END $$;
 SQL
+# Directus / schema config: só quando a senha do config_app estiver no cofre (directus-db-password).
+if [ -n "${DIRECTUS_DB_PASSWORD:-}" ]; then
+  psql -v ON_ERROR_STOP=1 -h postgres -U postgres -d dados -v cfg_pw="$DIRECTUS_DB_PASSWORD" <<'SQL'
+SELECT 'CREATE ROLE config_app LOGIN' WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'config_app') \gexec
+ALTER ROLE config_app PASSWORD :'cfg_pw';
+ALTER ROLE config_app SET search_path = config;
+CREATE SCHEMA IF NOT EXISTS config AUTHORIZATION config_app;
+SQL
+  for f in /config/*.sql; do
+    [ -e "$f" ] || continue
+    { echo "SET ROLE config_app;"; cat "$f"; } | psql -v ON_ERROR_STOP=1 -q -h postgres -U postgres -d dados
+  done
+  psql -v ON_ERROR_STOP=1 -q -h postgres -U postgres -d dados <<'SQL'
+GRANT USAGE ON SCHEMA config TO ingestao, mcp_leitura;
+SELECT format('GRANT SELECT ON config.%I TO ingestao, mcp_leitura', tablename)
+  FROM pg_tables WHERE schemaname = 'config' AND tablename NOT LIKE 'directus\_%' \gexec
+SQL
+  echo "db-setup: schema config ok"
+fi
 echo "db-setup ok"

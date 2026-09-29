@@ -24,6 +24,7 @@ Schemas:
   est estoque/produção, fis fiscal, mcd mercadorias, fin/tes financeiro, cfg02 classificação mercadológica.
 - raw_jetbov: respostas brutas da API do JetBov (fazenda), em jsonb, por execução (raw_jetbov.resposta).
 - raw_logus: cópia do ERP atual (Informix/Logus).
+- config: de/para mantidos no Directus (ex.: depara_produto). As tabelas directus_* não são legíveis.
 Use listar_tabelas e descrever_tabela antes de consultar. Consultas só com SELECT/WITH; o limite de
 linhas é aplicado automaticamente (avisa com truncado=true)."""
 
@@ -39,7 +40,7 @@ _seguranca = (
 )
 mcp = FastMCP("dados", instructions=INSTRUCOES, transport_security=_seguranca)
 LEITURA = ToolAnnotations(readOnlyHint=True, openWorldHint=False)
-SCHEMAS = ("api", "legado", "raw_jetbov", "raw_logus")
+SCHEMAS = ("api", "legado", "raw_jetbov", "raw_logus", "config")
 LIMITE_MAX = 2000
 
 

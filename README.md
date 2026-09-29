@@ -12,6 +12,7 @@ Documentação e decisões: nota "Plataforma de Dados Bomgado" no cofre do Obsid
 | `transformacao/` | views da API (`api/vw_*.sql`) materializadas como tabelas pelo Airflow; dbt depois |
 | `dados-api/` | gateway OData do Excel/Power BI (login Entra ID), lê `api.vw_*` |
 | `mcp-sql/` | MCP de SQL somente leitura (substitui o Directus/MCP pleno) |
+| `infra/directus/`, `infra/postgres/config/` | Directus (`config.bomgado.net`): telas de de/para sobre o schema `config` |
 
 ## Bancos e usuários
 - `airflow` (usuário `airflow`): metadados do Airflow.
@@ -22,6 +23,12 @@ Documentação e decisões: nota "Plataforma de Dados Bomgado" no cofre do Obsid
 - **Logus / ERP atual** (`ingestao/logus`): Informix `bd_bomgado_m` (rede do Armazém) lido por JDBC (driver da IBM, via JPype), somente leitura e em *dirty read*. Cópia completa com troca atômica para `raw_logus`, conforme `tabelas.conf`: DAG `logus_15min` (vendas, formas de recebimento, estoque) e `logus_diario_03_00` (cadastros). Cada cópia publica o asset `raw_logus_<agenda>`, que dispara as views `api.vw_atual_*` (`-- atualizar: após raw_logus_<agenda>`). Histórico das cargas em `raw_logus.carga`.
   - Segredos no cofre: `ifx-user` e `ifx-password`. Host, banco e servidor ficam no compose.
   - **1º deploy:** rodar `logus_diario_03_00` à mão **antes** de ativar `logus_15min` (as views de vendas e estoque juntam os cadastros).
+
+## Configurações de/para (Directus)
+- Schema `config`, dono `config_app` (o Directus não enxerga `raw_*`, `legado` nem `api`). As tabelas de negócio ficam versionadas em `infra/postgres/config/*.sql` e são criadas a cada deploy pelo `db-setup`. O Airflow (`ingestao`) e o MCP leem só essas tabelas, nunca as `directus_*`.
+- Tabela nova: criar o `.sql` em `infra/postgres/config/`, reimplantar e, no Directus, abrir a coleção para configurar a exibição.
+- Segredos no cofre: `directus-db-password`, `directus-secret`, `directus-admin-password` (sem eles o serviço não sobe, mas o resto da plataforma sim).
+- Primeira tabela: `config.depara_produto` (código interno do PlenoKW → `cdg_produto` do Logus).
 
 ## Deploy (EasyPanel)
 1. Serviço Compose, fonte Git, arquivo `docker-compose.yml` (raiz; o EasyPanel grava o `.env` na raiz e o compose só lê o `.env` da própria pasta).

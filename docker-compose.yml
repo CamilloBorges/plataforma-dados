@@ -56,15 +56,17 @@ services:
       AZURE_TENANT_ID: ${AZURE_TENANT_ID:?defina AZURE_TENANT_ID}
       AZURE_CLIENT_ID: ${AZURE_CLIENT_ID:?defina AZURE_CLIENT_ID}
       AZURE_CLIENT_SECRET: ${AZURE_CLIENT_SECRET:?defina AZURE_CLIENT_SECRET}
-      SEGREDOS_POSTGRES: POSTGRES_PASSWORD AIRFLOW_DB_PASSWORD INGESTAO_DB_PASSWORD API_DB_PASSWORD MCP_DB_PASSWORD
+      SEGREDOS_POSTGRES: POSTGRES_PASSWORD AIRFLOW_DB_PASSWORD INGESTAO_DB_PASSWORD API_DB_PASSWORD MCP_DB_PASSWORD DIRECTUS_DB_PASSWORD?
       SEGREDOS_AIRFLOW: AIRFLOW_DB_PASSWORD INGESTAO_DB_PASSWORD AIRFLOW_FERNET_KEY AIRFLOW_JWT_SECRET JETBOV_USER JETBOV_PASSWORD IFX_USER? IFX_PASSWORD?
       SEGREDOS_API: API_DB_PASSWORD ENTRA_TENANT_ID ENTRA_AUDIENCE ENTRA_GROUP_ID?
       SEGREDOS_MCP: MCP_DB_PASSWORD
+      SEGREDOS_DIRECTUS: DIRECTUS_DB_PASSWORD? DIRECTUS_SECRET? DIRECTUS_ADMIN_PASSWORD?
     volumes:
       - segredos-postgres:/run/segredos/postgres
       - segredos-airflow:/run/segredos/airflow
       - segredos-api:/run/segredos/api
       - segredos-mcp:/run/segredos/mcp
+      - segredos-directus:/run/segredos/directus
     healthcheck:
       test: ["CMD", "test", "-f", "/tmp/pronto"]
       interval: 5s
@@ -113,6 +115,7 @@ services:
     restart: "no"
     volumes:
       - ./infra/postgres/setup.sh:/setup.sh:ro
+      - ./infra/postgres/config:/config:ro
       - ./infra/segredos/com_segredos.sh:/usr/local/bin/com_segredos.sh:ro
       - segredos-postgres:/run/segredos:ro
     entrypoint: ["sh", "/usr/local/bin/com_segredos.sh", "sh", "/setup.sh"]
@@ -212,6 +215,47 @@ x-tmpfs: &tmpfs
     device: tmpfs
     o: size=64k,mode=0755
 
+  # Directus: telas de configuração (de/para) sobre o schema "config", com o papel config_app
+  # (não enxerga raw_*, legado nem api). Domínio config.bomgado.net, porta 8055, atrás do
+  # Cloudflare Access (Entra ID) + login próprio do Directus. Licença BSL: gratuita para
+  # organizações com menos de US$ 5 milhões/ano de receita+investimento.
+  directus:
+    image: directus/directus:12.4.1
+    restart: unless-stopped
+    entrypoint: ["sh", "/usr/local/bin/com_segredos.sh", "sh", "/usr/local/bin/inicio.sh"]
+    environment:
+      DB_CLIENT: pg
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_DATABASE: dados
+      DB_USER: config_app
+      DB_SEARCH_PATH: config
+      PUBLIC_URL: https://config.bomgado.net
+      ADMIN_EMAIL: camillo.cborges@bomgado.com
+      TELEMETRY: "false"
+      WEBSOCKETS_ENABLED: "false"
+      CACHE_ENABLED: "false"
+      RATE_LIMITER_ENABLED: "true"
+      MARKETPLACE_TRUST: sandbox
+    volumes:
+      - ./infra/segredos/com_segredos.sh:/usr/local/bin/com_segredos.sh:ro
+      - ./infra/directus/inicio.sh:/usr/local/bin/inicio.sh:ro
+      - segredos-directus:/run/segredos:ro
+      - directus-uploads:/directus/uploads
+    depends_on:
+      db-setup:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8055/server/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
 volumes:
   postgres-data:
   airflow-logs:
@@ -219,3 +263,5 @@ volumes:
   segredos-airflow: *tmpfs
   segredos-api: *tmpfs
   segredos-mcp: *tmpfs
+  segredos-directus: *tmpfs
+  directus-uploads:
