@@ -222,3 +222,10 @@ def dados(view: str, request: Request):
 @app.get("/health")
 def saude():
     return {"ok": True}
+
+
+@app.get("/")
+def inicio(request: Request):
+    """Quem abre o domínio no navegador vê como usar (o feed pede login do Entra, que o navegador não faz)."""
+    return {"servico": "Dados Bomgado (OData v4, somente leitura)", "feed": base(request),
+            "como_usar": "Excel ou Power BI: Obter Dados > De Feed OData > cole o feed > Conta organizacional"}
