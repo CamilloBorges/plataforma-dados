@@ -1,33 +1,22 @@
 """Materialização das tabelas api.vw_* (lidas pela API OData do Excel e pelo MCP de SQL).
 
-Uma DAG por agenda declarada no cabeçalho "-- atualizar:" dos arquivos transformacao/api/*.sql.
+Uma DAG por agenda declarada no cabeçalho "-- atualizar:" dos arquivos transformacao/api/*.sql
+(ver agenda.py; "após raw_logus_15min" roda logo depois de cada cópia do Logus).
 Ver transformacao/materializar.py.
 """
 import os
-import re
 from datetime import datetime, timedelta
 
 from airflow.sdk import dag, task
 
+from agenda import schedule, sufixo
 from transformacao.materializar import materializar, views
 
 
-def cron(agenda: str) -> str:
-    if agenda == "uma vez":
-        return "@once"
-    if m := re.fullmatch(r"(\d+)min", agenda):
-        return f"*/{m.group(1)} * * * *"
-    if m := re.fullmatch(r"diario (\d{2}):(\d{2})", agenda):
-        return f"{int(m.group(2))} {int(m.group(1))} * * *"
-    raise ValueError(f"agenda inválida: {agenda!r}")
-
-
 def criar_dag(agenda: str, nomes: list[str]):
-    sufixo = re.sub(r"[^a-z0-9]+", "_", agenda.lower()).strip("_")
-
     @dag(
-        dag_id=f"api_views_{sufixo}",
-        schedule=cron(agenda),
+        dag_id=f"api_views_{sufixo(agenda)}",
+        schedule=schedule(agenda),
         start_date=datetime(2026, 9, 28),
         catchup=False,
         max_active_runs=1,

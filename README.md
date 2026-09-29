@@ -19,6 +19,9 @@ Documentação e decisões: nota "Plataforma de Dados Bomgado" no cofre do Obsid
 
 ## Fontes
 - **JetBov** (`ingestao/jetbov`): API do app web, login com o usuário do Camillo, só GET. DAG `jetbov_extracao`, diária às 04:30.
+- **Logus / ERP atual** (`ingestao/logus`): Informix `bd_bomgado_m` (rede do Armazém) lido por JDBC (driver da IBM, via JPype), somente leitura e em *dirty read*. Cópia completa com troca atômica para `raw_logus`, conforme `tabelas.conf`: DAG `logus_15min` (vendas, formas de recebimento, estoque) e `logus_diario_03_00` (cadastros). Cada cópia publica o asset `raw_logus_<agenda>`, que dispara as views `api.vw_atual_*` (`-- atualizar: após raw_logus_<agenda>`). Histórico das cargas em `raw_logus.carga`.
+  - Segredos no cofre: `ifx-user` e `ifx-password`. Host, banco e servidor ficam no compose.
+  - **1º deploy:** rodar `logus_diario_03_00` à mão **antes** de ativar `logus_15min` (as views de vendas e estoque juntam os cadastros).
 
 ## Deploy (EasyPanel)
 1. Serviço Compose, fonte Git, arquivo `docker-compose.yml` (raiz; o EasyPanel grava o `.env` na raiz e o compose só lê o `.env` da própria pasta).
@@ -31,3 +34,4 @@ Documentação e decisões: nota "Plataforma de Dados Bomgado" no cofre do Obsid
 pip install -r ingestao/requirements.txt pytest
 python -m pytest ingestao/tests
 ```
+O teste da troca atômica do Logus usa um Postgres descartável: `TEST_DB_URL=postgresql://... python -m pytest ingestao/tests`.
