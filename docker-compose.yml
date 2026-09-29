@@ -206,15 +206,6 @@ services:
         limits:
           memory: 256M
 
-# Segredos: tmpfs (só em memória, nunca no disco). Um volume por consumidor. O conteúdo some quando
-# nenhum contêiner o usa; o serviço "segredos" fica no ar justamente para mantê-lo.
-x-tmpfs: &tmpfs
-  driver: local
-  driver_opts:
-    type: tmpfs
-    device: tmpfs
-    o: size=64k,mode=0755
-
   # Directus: telas de configuração (de/para) sobre o schema "config", com o papel config_app
   # (não enxerga raw_*, legado nem api). Domínio config.bomgado.net, porta 8055, atrás do
   # Cloudflare Access (Entra ID) + login do Directus também pelo Entra (OpenID; ver inicio.sh). Licença BSL: gratuita para
@@ -256,6 +247,16 @@ x-tmpfs: &tmpfs
       resources:
         limits:
           memory: 512M
+
+# Segredos: tmpfs (só em memória, nunca no disco). Um volume por consumidor. O conteúdo some quando
+# nenhum contêiner o usa; o serviço "segredos" fica no ar justamente para mantê-lo.
+x-tmpfs: &tmpfs
+  driver: local
+  driver_opts:
+    type: tmpfs
+    device: tmpfs
+    o: size=64k,mode=0755
+
 
 volumes:
   postgres-data:
