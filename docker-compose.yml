@@ -208,8 +208,8 @@ services:
 
   # Directus: telas de configuração (de/para) sobre o schema "config", com o papel config_app
   # (não enxerga raw_*, legado nem api). Domínio config.bomgado.net, porta 8055, atrás do
-  # Cloudflare Access (Entra ID) + login do Directus também pelo Entra (OpenID; ver inicio.sh). Licença BSL: gratuita para
-  # organizações com menos de US$ 5 milhões/ano de receita+investimento.
+  # Cloudflare Access (Entra ID) + login do Directus também pelo Entra (OpenID; ver inicio.sh). Licença MSCL (12.x): SSO só com chave;
+  # a Bomgado usa o Open Innovation Grant (gratuito), chave no cofre (ver inicio.sh).
   directus:
     image: directus/directus:12.4.1
     restart: unless-stopped
@@ -238,7 +238,7 @@ services:
       db-setup:
         condition: service_completed_successfully
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8055/server/health"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8055/server/ping"]  # /server/health dá 403 sem login na 12.x
       interval: 30s
       timeout: 5s
       retries: 5
