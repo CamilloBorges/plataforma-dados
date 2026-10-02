@@ -21,6 +21,7 @@ Documentação e decisões: nota "Plataforma de Dados Bomgado" no cofre do Obsid
 ## Fontes
 - **JetBov** (`ingestao/jetbov`): API do app web, login com o usuário do Camillo, só GET. DAG `jetbov_extracao`, diária às 04:30.
 - **Logus / ERP atual** (`ingestao/logus`): Informix `bd_bomgado_m` (rede do Armazém) lido por JDBC (driver da IBM, via JPype), somente leitura e em *dirty read*. Cópia completa com troca atômica para `raw_logus`, conforme `tabelas.conf`: DAG `logus_15min` (vendas, formas de recebimento, estoque) e `logus_diario_03_00` (cadastros). Cada cópia publica o asset `raw_logus_<agenda>`, que dispara as views `api.vw_atual_*` (`-- atualizar: após raw_logus_<agenda>`). Histórico das cargas em `raw_logus.carga`.
+- **F360 Finanças** (`ingestao/f360`): leitura da API pública (**somente leitura**; fase 1 da integração Logus → F360). DAG `f360_leitura` de hora em hora (06:20–22:20): parcelas de títulos a pagar e a receber com vencimento de -180 a +120 dias, por upsert em `raw_f360.parcela_titulo` (o que sumiu do F360 na janela é apagado), e cadastros em `raw_f360.cadastro`. Publica o asset `raw_f360`, que dispara `api.vw_boleto_conferencia` (boletos do Logus × F360 × retornos do banco). Chave no cofre: `f360-api-key`.
   - Segredos no cofre: `ifx-user` e `ifx-password`. Host, banco e servidor ficam no compose.
   - **1º deploy:** rodar `logus_diario_03_00` à mão **antes** de ativar `logus_15min` (as views de vendas e estoque juntam os cadastros).
 

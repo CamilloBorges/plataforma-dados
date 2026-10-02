@@ -25,15 +25,16 @@ ALTER ROLE api_leitura SET search_path = api;
 
 CREATE SCHEMA IF NOT EXISTS raw_jetbov AUTHORIZATION ingestao;
 CREATE SCHEMA IF NOT EXISTS raw_logus AUTHORIZATION ingestao;
+CREATE SCHEMA IF NOT EXISTS raw_f360 AUTHORIZATION ingestao;
 CREATE SCHEMA IF NOT EXISTS api AUTHORIZATION ingestao;
 
 -- Leitura: o que já existe e o que o ingestao criar daqui para frente.
 GRANT USAGE ON SCHEMA api TO api_leitura, mcp_leitura;
-GRANT USAGE ON SCHEMA raw_jetbov, raw_logus TO mcp_leitura;
+GRANT USAGE ON SCHEMA raw_jetbov, raw_logus, raw_f360 TO mcp_leitura;
 GRANT SELECT ON ALL TABLES IN SCHEMA api TO api_leitura, mcp_leitura;
-GRANT SELECT ON ALL TABLES IN SCHEMA raw_jetbov, raw_logus TO mcp_leitura;
+GRANT SELECT ON ALL TABLES IN SCHEMA raw_jetbov, raw_logus, raw_f360 TO mcp_leitura;
 ALTER DEFAULT PRIVILEGES FOR ROLE ingestao IN SCHEMA api GRANT SELECT ON TABLES TO api_leitura, mcp_leitura;
-ALTER DEFAULT PRIVILEGES FOR ROLE ingestao IN SCHEMA raw_jetbov, raw_logus GRANT SELECT ON TABLES TO mcp_leitura;
+ALTER DEFAULT PRIVILEGES FOR ROLE ingestao IN SCHEMA raw_jetbov, raw_logus, raw_f360 GRANT SELECT ON TABLES TO mcp_leitura;
 
 -- Legado: só leitura para o MCP e para o ingestao (as views vw_* leem dele).
 DO $$ BEGIN
