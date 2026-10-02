@@ -87,3 +87,28 @@ def test_linha_normaliza_item():
     assert l["liquidacao"] is None
     assert l["vencimento"] == "2026-09-29"
     assert l["cliente_fornecedor"] == "FILHOS DO REINO"
+
+
+def test_uso_indevido_espera_e_repete():
+    class Limitada(SessaoFalsa):
+        recusas = 2
+
+        def get(self, url, params, timeout, headers):
+            if self.recusas:
+                self.recusas -= 1
+                return Resposta('"Uso indevido"', 400)
+            return super().get(url, params, timeout, headers)
+
+    esperas = []
+    c = extrator.Cliente("chave", Limitada([[1]]))
+    assert c.get(extrator.PARCELAS, {"pagina": 1}, esperar=esperas.append)["Parcelas"] == [{"ParcelaId": "1"}]
+    assert esperas == [30, 90]
+
+
+def test_uso_indevido_persistente_falha():
+    class Bloqueada(SessaoFalsa):
+        def get(self, url, params, timeout, headers):
+            return Resposta('"Uso indevido"', 400)
+
+    with pytest.raises(RuntimeError, match="Uso indevido"):
+        extrator.Cliente("chave", Bloqueada([[1]])).get("/x", esperar=lambda s: None)

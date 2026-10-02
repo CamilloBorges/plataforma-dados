@@ -9,6 +9,16 @@ WITH f AS (
   FROM raw_f360.parcela_titulo
   WHERE tipo = 'Receita'
   ORDER BY numero, cancelada, visto_em DESC
+),
+-- Títulos do F360 lançados à mão, sem o número do boleto: casam por valor e vencimento próximo
+-- (até 60 dias), só para indicar onde conferir.
+sem_numero AS (
+  SELECT DISTINCT ON (b.nmr_docto_cob) b.nmr_docto_cob, p.vencimento, p.status
+  FROM raw_logus.recdocob b
+  JOIN raw_f360.parcela_titulo p
+    ON p.tipo = 'Receita' AND (p.numero IS NULL OR p.numero = '')
+   AND abs(p.valor - b.val_docto) <= 0.01 AND abs(p.vencimento - b.dat_vecto::date) <= 60
+  ORDER BY b.nmr_docto_cob, abs(p.vencimento - b.dat_vecto::date)
 )
 SELECT
   trim(b.nmr_docto_cob)          AS id,
@@ -22,9 +32,11 @@ SELECT
   f.liquidacao                   AS liquidado_no_f360_em,
   f.valor                        AS valor_f360,
   CASE
+    WHEN b.val_docto < 10                                THEN 'boleto de teste'
     WHEN b.dat_cancel IS NOT NULL AND f.numero IS NOT NULL AND f.liquidacao IS NULL
                                                          THEN 'cancelado no Logus e aberto no F360'
     WHEN b.dat_cancel IS NOT NULL                        THEN 'ok'
+    WHEN f.numero IS NULL AND s.nmr_docto_cob IS NOT NULL THEN 'no F360 sem o número do boleto (conferir)'
     WHEN f.numero IS NULL AND b.dat_vecto::date >= current_date - 180
                                                          THEN 'sem título no F360'
     WHEN f.numero IS NULL                                THEN 'fora da janela lida do F360'
@@ -35,3 +47,4 @@ SELECT
   END                            AS pendencia
 FROM raw_logus.recdocob b
 LEFT JOIN f ON f.numero = trim(b.nmr_docto_cob)
+LEFT JOIN sem_numero s ON s.nmr_docto_cob = b.nmr_docto_cob

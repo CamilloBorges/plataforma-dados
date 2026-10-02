@@ -13,6 +13,7 @@ vão inteiros para raw_f360.cadastro.
 import json
 import logging
 import re
+import time
 import uuid
 from datetime import date, timedelta
 
@@ -31,6 +32,9 @@ CADASTROS = {
 }
 PARCELAS = "/ParcelasDeTituloPublicAPI/ListarParcelasDeTitulos"
 TIMEOUT = 120
+# O F360 responde HTTP 400 "Uso indevido" a leituras seguidas demais (02/10/2026: a 2ª carga, logo
+# depois da 1ª, foi recusada). Espera e repete antes de desistir.
+ESPERAS_USO_INDEVIDO = (30, 90, 180)
 
 log = logging.getLogger(__name__)
 
@@ -116,8 +120,8 @@ class Cliente:
             raise RuntimeError(f"F360 login: HTTP {r.status_code}: {self._limpo(r.text)}")
         self._jwt = r.json()["Token"]
 
-    def get(self, caminho: str, params: dict | None = None):
-        """GET autenticado; renova o JWT uma vez em caso de 401. Devolve o Result."""
+    def _get_http(self, caminho: str, params: dict | None):
+        """GET autenticado; renova o JWT uma vez em caso de 401."""
         for tentativa in (0, 1):
             if self._jwt is None or tentativa == 1:
                 self._login()
@@ -125,6 +129,16 @@ class Cliente:
                             headers={"Authorization": f"Bearer {self._jwt}"})
             if r.status_code != 401:
                 break
+        return r
+
+    def get(self, caminho: str, params: dict | None = None, esperar=time.sleep):
+        """GET autenticado, com espera e nova tentativa no "Uso indevido". Devolve o Result."""
+        for espera in (*ESPERAS_USO_INDEVIDO, None):
+            r = self._get_http(caminho, params)
+            if not (r.status_code == 400 and "uso indevido" in r.text.lower()) or espera is None:
+                break
+            log.warning("F360 %s: 'Uso indevido'; nova tentativa em %d s", caminho, espera)
+            esperar(espera)
         if r.status_code >= 400:
             raise RuntimeError(f"F360 {caminho}: HTTP {r.status_code}: {self._limpo(r.text)}")
         dados = r.json()
