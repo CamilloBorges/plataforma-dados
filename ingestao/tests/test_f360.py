@@ -45,7 +45,7 @@ def test_janelas_de_30_dias_cobrem_o_periodo():
 def test_parcelas_percorre_paginas_e_janelas():
     s = SessaoFalsa([[1, 2], [3]])
     c = extrator.Cliente("chave", s)
-    itens = c.parcelas("Receita", date(2026, 1, 1), date(2026, 2, 15))  # 2 janelas
+    itens = c.parcelas("Receita", date(2026, 1, 1), date(2026, 2, 15), esperar=lambda s: None)  # 2 janelas
     assert len(itens) == 6
     assert {g["pagina"] for g in s.gets} == {1, 2}
     assert all(g["tipoDatas"] == "Vencimento" for g in s.gets)
@@ -54,12 +54,12 @@ def test_parcelas_percorre_paginas_e_janelas():
 def test_total_divergente_falha():
     s = SessaoFalsa([[1, 2]], total=5)
     with pytest.raises(RuntimeError, match="informa 5"):
-        extrator.Cliente("chave", s).parcelas("Despesa", date(2026, 1, 1), date(2026, 1, 10))
+        extrator.Cliente("chave", s).parcelas("Despesa", date(2026, 1, 1), date(2026, 1, 10), esperar=lambda s: None)
 
 
 def test_renova_jwt_no_401():
     s = SessaoFalsa([[1]], expira_uma_vez=True)
-    extrator.Cliente("chave", s).parcelas("Despesa", date(2026, 1, 1), date(2026, 1, 10))
+    extrator.Cliente("chave", s).parcelas("Despesa", date(2026, 1, 1), date(2026, 1, 10), esperar=lambda s: None)
     assert s.logins == 2
 
 
@@ -112,3 +112,31 @@ def test_uso_indevido_persistente_falha():
 
     with pytest.raises(RuntimeError, match="Uso indevido"):
         extrator.Cliente("chave", Bloqueada([[1]])).get("/x", esperar=lambda s: None)
+
+
+def test_linha_cartao_normaliza_item():
+    item = {
+        "ParcelaId": "c1", "Numero": 1, "Vencimento": "2026-10-16", "Liquidacao": "", "ValorBruto": 132.39,
+        "ValorLiquido": 123.26, "Taxa": 9.13, "Modalidade": "Crédito à vista", "Cancelada": False,
+        "DadosDoCartao": {"CartaoId": "k1", "DataDaVenda": "2026-10-01", "Hora": "18:32:54", "Adquirente": "GetNet",
+                          "Bandeira": "Visa", "MeioDeCaptura": "TEF", "TotalDeParcelas": 1, "ConciliadoComPDV": "false",
+                          "Cancelado": "false", "Empresa": {"Nome": "ARMAZÉM BOMGADO", "Inscricao": "38.824.899/0001-30"},
+                          "Vendas": [{"NSU": 702214, "CodigoAutorizacao": "702214"}]},
+    }
+    l = extrator.linha_cartao(item)
+    assert l["data_venda"] == "2026-10-01" and l["liquidacao"] is None
+    assert l["nsu"] == "702214" and l["autorizacao"] == "702214"
+    assert l["cancelada"] is False and l["conciliado_pdv"] is False
+    assert l["total_parcelas"] == 1 and l["empresa_cnpj"] == "38.824.899/0001-30"
+
+
+def test_cartoes_sem_permissao_segue_sem_gravar():
+    class SemCartoes:
+        def parcelas(self, *a, **k):
+            raise RuntimeError('F360 /ParcelasDeCartoesPublicAPI/ListarParcelasDeCartoes: HTTP 404: "Endpoint não liberado para esse usuário"')
+
+    class ConexaoQueNaoPodeSerUsada:
+        def __getattr__(self, nome):
+            raise AssertionError("não devia gravar nada")
+
+    assert extrator._cartoes(ConexaoQueNaoPodeSerUsada(), SemCartoes(), date(2026, 10, 2)) == {"parcelas_cartao": "sem permissão"}

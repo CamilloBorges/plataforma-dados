@@ -7,8 +7,10 @@ um POST que troca a chave por um JWT).
 A cada execução relê as parcelas de títulos (contas a pagar e a receber) com vencimento numa
 janela móvel (JANELA_PASSADO dias para trás, JANELA_FUTURO para frente), em janelas de 30 dias
 (limite da API), e grava em raw_f360.parcela_titulo por upsert. O que estava na janela e não
-voltou nesta leitura (excluído no F360) é apagado. Cadastros (contas, centros de custo, planos)
-vão inteiros para raw_f360.cadastro.
+voltou nesta leitura (excluído no F360) é apagado. O mesmo para as parcelas de cartões (vendas que
+as adquirentes mandam ao F360), pela data da venda dos últimos JANELA_CARTOES dias, em
+raw_f360.parcela_cartao. Cadastros (contas, centros de custo, planos) vão inteiros para
+raw_f360.cadastro.
 """
 import json
 import logging
@@ -31,6 +33,9 @@ CADASTROS = {
     "planos_de_contas": "/PlanoDeContasPublicAPI/ListarPlanosContas",
 }
 PARCELAS = "/ParcelasDeTituloPublicAPI/ListarParcelasDeTitulos"
+CARTOES = "/ParcelasDeCartoesPublicAPI/ListarParcelasDeCartoes"
+JANELA_CARTOES = 45
+PAUSA = 0.5  # segundos entre chamadas paginadas (o F360 recusa leituras seguidas demais)
 TIMEOUT = 120
 # O F360 responde HTTP 400 "Uso indevido" a leituras seguidas demais (02/10/2026: a 2ª carga, logo
 # depois da 1ª, foi recusada). Espera e repete antes de desistir.
@@ -67,6 +72,32 @@ CREATE TABLE IF NOT EXISTS raw_f360.parcela_titulo (
 );
 CREATE INDEX IF NOT EXISTS parcela_titulo_venc_idx ON raw_f360.parcela_titulo (tipo, vencimento);
 CREATE INDEX IF NOT EXISTS parcela_titulo_numero_idx ON raw_f360.parcela_titulo (tipo, numero);
+CREATE TABLE IF NOT EXISTS raw_f360.parcela_cartao (
+    parcela_id text PRIMARY KEY,
+    cartao_id text,
+    data_venda date NOT NULL,
+    hora_venda time,
+    vencimento date,
+    liquidacao date,
+    empresa text,
+    empresa_cnpj text,
+    adquirente text,
+    bandeira text,
+    modalidade text,
+    meio_captura text,
+    numero_parcela integer,
+    total_parcelas integer,
+    valor_bruto numeric(14,2),
+    valor_liquido numeric(14,2),
+    taxa numeric(14,2),
+    nsu text,
+    autorizacao text,
+    cancelada boolean,
+    conciliado_pdv boolean,
+    dados jsonb NOT NULL,
+    visto_em timestamptz NOT NULL
+);
+CREATE INDEX IF NOT EXISTS parcela_cartao_venda_idx ON raw_f360.parcela_cartao (data_venda, empresa_cnpj);
 CREATE TABLE IF NOT EXISTS raw_f360.cadastro (
     nome text PRIMARY KEY,
     extraido_em timestamptz NOT NULL,
@@ -148,15 +179,18 @@ class Cliente:
             return dados.get("Result", dados)
         return dados
 
-    def parcelas(self, tipo: str, inicio: date, fim: date) -> list[dict]:
-        """Todas as parcelas de `tipo` com vencimento no período. Falha se a soma das páginas não
-        bater com o total que a API informa (não grava lista incompleta sem perceber)."""
+    def parcelas(self, tipo: str, inicio: date, fim: date, caminho: str = PARCELAS,
+                 tipo_datas: str = "Vencimento", esperar=time.sleep) -> list[dict]:
+        """Todas as parcelas de `tipo` no período (por `tipo_datas`). Falha se a soma das páginas
+        não bater com o total que a API informa (não grava lista incompleta sem perceber)."""
         itens: list[dict] = []
         for ini, fi in janelas(inicio, fim):
             pagina, paginas, total, lidos = 1, 1, None, 0
             while pagina <= paginas:
-                res = self.get(PARCELAS, {"tipo": tipo, "tipoDatas": "Vencimento", "inicio": ini.isoformat(),
-                                          "fim": fi.isoformat(), "pagina": pagina})
+                if itens or lidos:
+                    esperar(PAUSA)
+                res = self.get(caminho, {"tipo": tipo, "tipoDatas": tipo_datas, "inicio": ini.isoformat(),
+                                         "fim": fi.isoformat(), "pagina": pagina})
                 lote = _lista(res)
                 if pagina == 1:
                     total = _total(res)
@@ -201,6 +235,63 @@ def linha(item: dict) -> dict:
     }
 
 
+def _int(valor):
+    try:
+        return int(valor)
+    except (TypeError, ValueError):
+        return None
+
+
+def _bool(valor) -> bool | None:
+    if isinstance(valor, bool):
+        return valor
+    if isinstance(valor, str) and valor.lower() in ("true", "false"):
+        return valor.lower() == "true"
+    return None
+
+
+def linha_cartao(item: dict) -> dict:
+    """Colunas de raw_f360.parcela_cartao a partir de um item da API."""
+    cartao = item.get("DadosDoCartao") or {}
+    empresa = cartao.get("Empresa") or {}
+    venda = (cartao.get("Vendas") or [{}])[0]
+    return {
+        "parcela_id": item["ParcelaId"],
+        "cartao_id": cartao.get("CartaoId"),
+        "data_venda": _data(cartao.get("DataDaVenda") or venda.get("DataDaVenda")),
+        "hora_venda": cartao.get("Hora") or venda.get("HoraDaVenda") or None,
+        "vencimento": _data(item.get("Vencimento")),
+        "liquidacao": _data(item.get("Liquidacao")),
+        "empresa": empresa.get("Nome"),
+        "empresa_cnpj": empresa.get("Inscricao"),
+        "adquirente": cartao.get("Adquirente"),
+        "bandeira": cartao.get("Bandeira"),
+        "modalidade": item.get("Modalidade"),
+        "meio_captura": cartao.get("MeioDeCaptura"),
+        "numero_parcela": _int(item.get("Numero")),
+        "total_parcelas": _int(cartao.get("TotalDeParcelas")),
+        "valor_bruto": item.get("ValorBruto"),
+        "valor_liquido": item.get("ValorLiquido"),
+        "taxa": item.get("Taxa"),
+        "nsu": str(venda["NSU"]) if venda.get("NSU") is not None else None,
+        "autorizacao": venda.get("CodigoAutorizacao"),
+        "cancelada": bool(item.get("Cancelada")) or bool(_bool(cartao.get("Cancelado"))),
+        "conciliado_pdv": _bool(cartao.get("ConciliadoComPDV")),
+        "dados": json.dumps(item, ensure_ascii=False),
+    }
+
+
+COLUNAS_CARTAO = ["parcela_id", "cartao_id", "data_venda", "hora_venda", "vencimento", "liquidacao", "empresa",
+                  "empresa_cnpj", "adquirente", "bandeira", "modalidade", "meio_captura", "numero_parcela",
+                  "total_parcelas", "valor_bruto", "valor_liquido", "taxa", "nsu", "autorizacao", "cancelada",
+                  "conciliado_pdv", "dados"]
+UPSERT_CARTAO = (
+    f"INSERT INTO raw_f360.parcela_cartao ({', '.join(COLUNAS_CARTAO)}, visto_em) "
+    f"VALUES ({', '.join('%(' + c + ')s' for c in COLUNAS_CARTAO)}, %(visto_em)s) "
+    "ON CONFLICT (parcela_id) DO UPDATE SET "
+    + ", ".join(f"{c} = EXCLUDED.{c}" for c in COLUNAS_CARTAO[1:]) + ", visto_em = EXCLUDED.visto_em"
+)
+
 COLUNAS = ["parcela_id", "tipo", "vencimento", "liquidacao", "status", "valor", "numero", "cliente_fornecedor",
            "cliente_fornecedor_doc", "empresa", "empresa_cnpj", "conta", "meio_pagamento", "cancelada", "dados"]
 UPSERT = (
@@ -209,6 +300,28 @@ UPSERT = (
     "ON CONFLICT (parcela_id) DO UPDATE SET "
     + ", ".join(f"{c} = EXCLUDED.{c}" for c in COLUNAS[1:]) + ", visto_em = EXCLUDED.visto_em"
 )
+
+
+def _cartoes(conn, f360: Cliente, hoje: date) -> dict:
+    """Relê as parcelas de cartões da janela e grava em raw_f360.parcela_cartao. Se a chave não tiver
+    a função "Parcelas de Cartões" liberada no F360, avisa e segue (os títulos já foram gravados)."""
+    inicio = hoje - timedelta(days=JANELA_CARTOES)
+    try:
+        itens = [i for i in f360.parcelas("Receita", inicio, hoje, CARTOES, "Venda") if i.get("ParcelaId")]
+    except RuntimeError as e:
+        if "não liberado" not in str(e).lower():
+            raise
+        log.warning("F360: cartões ignorados (endpoint não liberado para a chave)")
+        return {"parcelas_cartao": "sem permissão"}
+    with conn.transaction():
+        visto = conn.execute("SELECT clock_timestamp()").fetchone()[0]
+        with conn.cursor() as cur:
+            cur.executemany(UPSERT_CARTAO, [{**linha_cartao(i), "visto_em": visto} for i in itens])
+        apagadas = conn.execute(
+            "DELETE FROM raw_f360.parcela_cartao WHERE data_venda BETWEEN %s AND %s AND visto_em < %s",
+            (inicio, hoje, visto)).rowcount
+    log.info("F360: cartões %d parcelas (%d apagadas)", len(itens), apagadas)
+    return {"parcelas_cartao": len(itens), "apagadas_cartao": apagadas}
 
 
 def executar(db_url: str, api_key: str, hoje: date | None = None, cliente: Cliente | None = None) -> dict:
@@ -240,6 +353,7 @@ def executar(db_url: str, api_key: str, hoje: date | None = None, cliente: Clien
                 contagem[f"parcelas_{tipo.lower()}"] = len(itens)
                 contagem[f"apagadas_{tipo.lower()}"] = apagadas
                 log.info("F360: %s %d parcelas (%d apagadas)", tipo, len(itens), apagadas)
+            contagem.update(_cartoes(conn, f360, hoje))
             conn.execute("UPDATE raw_f360.execucao SET fim = now(), status = 'ok', contagem = %s WHERE id = %s",
                          (json.dumps(contagem), execucao))
         except Exception as e:
