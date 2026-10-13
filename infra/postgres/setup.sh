@@ -26,17 +26,19 @@ ALTER ROLE api_leitura SET search_path = api;
 CREATE SCHEMA IF NOT EXISTS raw_jetbov AUTHORIZATION ingestao;
 CREATE SCHEMA IF NOT EXISTS raw_logus AUTHORIZATION ingestao;
 CREATE SCHEMA IF NOT EXISTS raw_f360 AUTHORIZATION ingestao;
+-- raw_fabric: tabelas do lakehouse do Fabric (custo do açougue e gold para conferência), até desligar o Fabric.
+CREATE SCHEMA IF NOT EXISTS raw_fabric AUTHORIZATION ingestao;
 CREATE SCHEMA IF NOT EXISTS api AUTHORIZATION ingestao;
 -- stg: camada de staging do dbt (transformacao/dbt), views sobre os raw_*.
 CREATE SCHEMA IF NOT EXISTS stg AUTHORIZATION ingestao;
 
 -- Leitura: o que já existe e o que o ingestao criar daqui para frente.
 GRANT USAGE ON SCHEMA api TO api_leitura, mcp_leitura;
-GRANT USAGE ON SCHEMA raw_jetbov, raw_logus, raw_f360, stg TO mcp_leitura;
+GRANT USAGE ON SCHEMA raw_jetbov, raw_logus, raw_f360, raw_fabric, stg TO mcp_leitura;
 GRANT SELECT ON ALL TABLES IN SCHEMA api TO api_leitura, mcp_leitura;
-GRANT SELECT ON ALL TABLES IN SCHEMA raw_jetbov, raw_logus, raw_f360, stg TO mcp_leitura;
+GRANT SELECT ON ALL TABLES IN SCHEMA raw_jetbov, raw_logus, raw_f360, raw_fabric, stg TO mcp_leitura;
 ALTER DEFAULT PRIVILEGES FOR ROLE ingestao IN SCHEMA api GRANT SELECT ON TABLES TO api_leitura, mcp_leitura;
-ALTER DEFAULT PRIVILEGES FOR ROLE ingestao IN SCHEMA raw_jetbov, raw_logus, raw_f360, stg GRANT SELECT ON TABLES TO mcp_leitura;
+ALTER DEFAULT PRIVILEGES FOR ROLE ingestao IN SCHEMA raw_jetbov, raw_logus, raw_f360, raw_fabric, stg GRANT SELECT ON TABLES TO mcp_leitura;
 
 -- Legado: só leitura para o MCP e para o ingestao (as views vw_* leem dele).
 DO $$ BEGIN

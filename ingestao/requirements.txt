@@ -1,3 +1,4 @@
 requests>=2.32
 psycopg[binary]>=3.2
 JPype1>=1.5
+deltalake>=1.6,<2

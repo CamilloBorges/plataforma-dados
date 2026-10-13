@@ -1,0 +1,16 @@
+version: 2
+
+models:
+  - name: stg_fabric__custo_medio_acougue
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [ano, mes, codigo_produto]
+    columns:
+      - name: custo_unitario
+        # Aviso, não erro: o Fabric grava alguns custos vazios (1 a 4 por mês em 2026) e o Fato Item
+        # os trata como zero, caindo no custo do Logus. Fica visível no dbt build.
+        data_tests:
+          - not_null:
+              config:
+                severity: warn

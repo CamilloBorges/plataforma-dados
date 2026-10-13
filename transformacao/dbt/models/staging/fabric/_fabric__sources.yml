@@ -1,0 +1,9 @@
+version: 2
+
+sources:
+  - name: fabric
+    description: Tabelas copiadas do lakehouse armazem_lh do Fabric (ingestao/fabric), até desligar o Fabric.
+    schema: raw_fabric
+    tables:
+      - name: custo_medio_acougue
+        description: Gold_Custo_Medio_Acougue, calculado pelo notebook "Calculo custo Açougue" do Fabric.
