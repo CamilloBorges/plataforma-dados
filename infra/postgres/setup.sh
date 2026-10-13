@@ -32,9 +32,9 @@ CREATE SCHEMA IF NOT EXISTS stg AUTHORIZATION ingestao;
 
 -- Leitura: o que já existe e o que o ingestao criar daqui para frente.
 GRANT USAGE ON SCHEMA api TO api_leitura, mcp_leitura;
-GRANT USAGE ON SCHEMA raw_jetbov, raw_logus, raw_f360 TO mcp_leitura;
+GRANT USAGE ON SCHEMA raw_jetbov, raw_logus, raw_f360, stg TO mcp_leitura;
 GRANT SELECT ON ALL TABLES IN SCHEMA api TO api_leitura, mcp_leitura;
-GRANT SELECT ON ALL TABLES IN SCHEMA raw_jetbov, raw_logus, raw_f360 TO mcp_leitura;
+GRANT SELECT ON ALL TABLES IN SCHEMA raw_jetbov, raw_logus, raw_f360, stg TO mcp_leitura;
 ALTER DEFAULT PRIVILEGES FOR ROLE ingestao IN SCHEMA api GRANT SELECT ON TABLES TO api_leitura, mcp_leitura;
 ALTER DEFAULT PRIVILEGES FOR ROLE ingestao IN SCHEMA raw_jetbov, raw_logus, raw_f360, stg GRANT SELECT ON TABLES TO mcp_leitura;
 
