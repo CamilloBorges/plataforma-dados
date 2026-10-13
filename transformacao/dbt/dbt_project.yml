@@ -1,0 +1,22 @@
+# Projeto dbt da plataforma de dados: transformações em camadas (origem -> staging -> marts).
+# Começou em 13/10/2026 com a Rentabilidade por Setor (porta do notebook "Fato Item" do Fabric).
+# As views antigas de transformacao/api/*.sql continuam no materializar.py até migrarem.
+name: bomgado
+version: "1.0"
+profile: bomgado
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+test-paths: ["tests"]
+target-path: target
+clean-targets: ["target", "dbt_packages"]
+
+flags:
+  send_anonymous_usage_stats: false
+
+models:
+  bomgado:
+    staging:
+      # Staging: uma view por fonte, só renomeia, tipa e filtra. Schema "stg".
+      +materialized: view
+      +schema: stg

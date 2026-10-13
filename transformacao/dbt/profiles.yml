@@ -1,0 +1,14 @@
+# Conexão do dbt: o mesmo usuário dos extratores (ingestao), que é dono dos schemas que o dbt cria.
+# A senha vem do cofre (ingestao-db-password) pelo com_segredos.sh do Airflow.
+bomgado:
+  target: producao
+  outputs:
+    producao:
+      type: postgres
+      host: "{{ env_var('DBT_HOST', 'postgres') }}"
+      port: "{{ env_var('DBT_PORT', '5432') | int }}"
+      user: ingestao
+      password: "{{ env_var('INGESTAO_DB_PASSWORD') }}"
+      dbname: dados
+      schema: stg
+      threads: 2

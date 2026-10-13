@@ -1,0 +1,31 @@
+version: 2
+
+# Testes das chaves: a mesma linha não pode aparecer duas vezes (um join errado duplicaria valores
+# no Fato Item). Combinações testadas com dbt_utils.
+
+models:
+  - name: stg_logus__compras_item
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: codigo_produto
+        data_tests: [not_null]
+  - name: stg_logus__vendas_item
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+  - name: stg_logus__transformacoes
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [filial_id, transformacao_id, codigo_produto_origem, codigo_produto_destino]
+  - name: stg_logus__estoque_diario
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [data, filial_id, codigo_produto]
+  - name: stg_logus__precos
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [filial_id, codigo_produto]

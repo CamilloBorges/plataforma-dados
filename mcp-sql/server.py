@@ -25,6 +25,7 @@ Schemas:
 - raw_jetbov: respostas brutas da API do JetBov (fazenda), em jsonb, por execução (raw_jetbov.resposta).
 - raw_logus: cópia do ERP atual (Informix/Logus).
 - raw_f360: leitura do F360 Finanças (parcelas de títulos a pagar e a receber, cadastros).
+- stg: camada de staging do dbt (views stg_<fonte>__<assunto>, nomes em português e já tipados).
 - config: de/para mantidos no Directus (ex.: depara_produto). As tabelas directus_* não são legíveis.
 Use listar_tabelas e descrever_tabela antes de consultar. Consultas só com SELECT/WITH; o limite de
 linhas é aplicado automaticamente (avisa com truncado=true)."""
@@ -41,7 +42,7 @@ _seguranca = (
 )
 mcp = FastMCP("dados", instructions=INSTRUCOES, transport_security=_seguranca)
 LEITURA = ToolAnnotations(readOnlyHint=True, openWorldHint=False)
-SCHEMAS = ("api", "legado", "raw_jetbov", "raw_logus", "raw_f360", "config")
+SCHEMAS = ("api", "legado", "raw_jetbov", "raw_logus", "raw_f360", "stg", "config")
 LIMITE_MAX = 2000
 
 

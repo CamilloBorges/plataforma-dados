@@ -1,0 +1,25 @@
+version: 2
+
+sources:
+  - name: logus
+    description: Cópia do ERP atual (Informix/Logus) feita pelas DAGs logus_* (ingestao/logus).
+    schema: raw_logus
+    tables:
+      - name: vndpdv
+      - name: vnditenspdv
+      - name: vndpdvnfce
+        description: Sem o XML (ingestao/logus/consultas/vndpdvnfce.sql).
+      - name: vndpdvnfe
+      - name: bdomnfe
+      - name: bdodnfe
+      - name: estmped
+      - name: estdiapr
+        description: Com val_custo_coml, o custo comercial do dia (ingestao/logus/consultas/estdiapr.sql).
+      - name: estmtransfprodint
+      - name: estdtransfprodint
+      - name: estprfil
+      - name: cadfil
+      - name: cadprod
+      - name: cadforn
+      - name: cadopes
+      - name: cadicms

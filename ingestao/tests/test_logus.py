@@ -50,6 +50,18 @@ def test_tabelas_conf_real():
     assert t["cadprod"] == "diario 03:00"
 
 
+def test_consulta_propria_ou_select(tmp_path):
+    (tmp_path / "estdiapr.sql").write_text("SELECT a.*, 1 AS x FROM estdiapr a", encoding="utf-8")
+    assert extrator.consulta("estdiapr", tmp_path) == "SELECT a.*, 1 AS x FROM estdiapr a"
+    assert extrator.consulta("vndpdv", tmp_path) == "SELECT * FROM vndpdv"
+
+
+def test_consultas_reais_tem_tabela_no_conf():
+    conf = extrator.tabelas()
+    for arquivo in extrator.CONSULTAS.glob("*.sql"):
+        assert arquivo.stem in conf, f"{arquivo.name} sem linha no tabelas.conf"
+
+
 def test_tabelas_recusa_nome_e_agenda_invalidos(tmp_path):
     conf = tmp_path / "t.conf"
     conf.write_text("vndpdv; drop  15min\n", encoding="utf-8")

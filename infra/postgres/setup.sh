@@ -3,7 +3,7 @@
 # e reaplica as permissões. (O initdb/ só roda no 1º boot; mudanças de papel/schema vêm para cá.)
 #
 # Papéis:
-#   ingestao     dono dos schemas raw_* e api (extratores e materialização das views)
+#   ingestao     dono dos schemas raw_*, api e stg (extratores, materialização das views e dbt)
 #   api_leitura  só SELECT no schema api (gateway OData do Excel)
 #   mcp_leitura  só SELECT em api, legado e raw_* (MCP de SQL do Claude/Copilot)
 #   config_app   dono do schema config (Directus: tabelas de sistema directus_* e as de de/para).
@@ -27,6 +27,8 @@ CREATE SCHEMA IF NOT EXISTS raw_jetbov AUTHORIZATION ingestao;
 CREATE SCHEMA IF NOT EXISTS raw_logus AUTHORIZATION ingestao;
 CREATE SCHEMA IF NOT EXISTS raw_f360 AUTHORIZATION ingestao;
 CREATE SCHEMA IF NOT EXISTS api AUTHORIZATION ingestao;
+-- stg: camada de staging do dbt (transformacao/dbt), views sobre os raw_*.
+CREATE SCHEMA IF NOT EXISTS stg AUTHORIZATION ingestao;
 
 -- Leitura: o que já existe e o que o ingestao criar daqui para frente.
 GRANT USAGE ON SCHEMA api TO api_leitura, mcp_leitura;
@@ -34,7 +36,7 @@ GRANT USAGE ON SCHEMA raw_jetbov, raw_logus, raw_f360 TO mcp_leitura;
 GRANT SELECT ON ALL TABLES IN SCHEMA api TO api_leitura, mcp_leitura;
 GRANT SELECT ON ALL TABLES IN SCHEMA raw_jetbov, raw_logus, raw_f360 TO mcp_leitura;
 ALTER DEFAULT PRIVILEGES FOR ROLE ingestao IN SCHEMA api GRANT SELECT ON TABLES TO api_leitura, mcp_leitura;
-ALTER DEFAULT PRIVILEGES FOR ROLE ingestao IN SCHEMA raw_jetbov, raw_logus, raw_f360 GRANT SELECT ON TABLES TO mcp_leitura;
+ALTER DEFAULT PRIVILEGES FOR ROLE ingestao IN SCHEMA raw_jetbov, raw_logus, raw_f360, stg GRANT SELECT ON TABLES TO mcp_leitura;
 
 -- Legado: só leitura para o MCP e para o ingestao (as views vw_* leem dele).
 DO $$ BEGIN

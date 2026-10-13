@@ -20,6 +20,7 @@ import psycopg
 from psycopg import sql
 
 CONF = Path(__file__).with_name("tabelas.conf")
+CONSULTAS = Path(__file__).with_name("consultas")
 JARS = os.environ.get("IFX_JDBC_JARS", "/opt/informix-jdbc/*.jar")
 NOME = re.compile(r"^[a-z0-9_]+$")
 AGENDA = re.compile(r"^(\d+min|diario \d{2}:\d{2})$")
@@ -55,6 +56,12 @@ def tabelas(conf: Path = CONF) -> dict[str, str]:
             raise ValueError(f"{nome}: agenda inválida {agenda!r}")
         saida[nome] = agenda
     return saida
+
+
+def consulta(tabela: str, pasta: Path = CONSULTAS) -> str:
+    """SQL de leitura da tabela: consultas/<tabela>.sql, se existir; senão SELECT * FROM <tabela>."""
+    arquivo = pasta / f"{tabela}.sql"
+    return arquivo.read_text(encoding="utf-8") if arquivo.exists() else f"SELECT * FROM {tabela}"
 
 
 # java.sql.Types -> tipo do Postgres. Texto (CHAR, VARCHAR, LVARCHAR...) vira text.
@@ -200,7 +207,7 @@ def executar(db_url: str, agenda: str, host: str, banco: str, servidor: str, usu
                     pk = chave_primaria(ifx, tabela)
                     st = ifx.createStatement()
                     st.setFetchSize(LOTE)
-                    rs = st.executeQuery(f"SELECT * FROM {tabela}")  # nome validado em tabelas()
+                    rs = st.executeQuery(consulta(tabela))  # nome validado em tabelas()
                     try:
                         linhas = copiar(pg, tabela, colunas(rs.getMetaData()), pk, rs)
                     finally:
