@@ -16,6 +16,8 @@ from pathlib import Path
 import psycopg
 from psycopg import sql
 
+from ingestao.troca import trocar
+
 CONF = Path(__file__).with_name("tabelas.conf")
 CAMINHO = re.compile(r"^[a-z0-9_]+/[a-z0-9_]+$")  # <schema do lakehouse>/<tabela>
 NOME = re.compile(r"^[a-z0-9_]+$")
@@ -73,7 +75,6 @@ def tipo_pg(tipo) -> str:
 def copiar(pg: psycopg.Connection, destino: str, tabela) -> int:
     """Grava a tabela Arrow em raw_fabric.<destino> com troca atômica; devolve o nº de linhas."""
     cols = [(c.lower(), tipo_pg(t)) for c, t in zip(tabela.schema.names, tabela.schema.types)]
-    alvo = sql.Identifier("raw_fabric", destino)
     tmp = sql.Identifier("raw_fabric", f"{destino}__novo")
     ddl = sql.SQL(", ").join(sql.SQL("{} {}").format(sql.Identifier(n), sql.SQL(t)) for n, t in cols)
     with pg.transaction():
@@ -83,8 +84,7 @@ def copiar(pg: psycopg.Connection, destino: str, tabela) -> int:
             for lote in tabela.to_batches():
                 for linha in zip(*(lote.column(i).to_pylist() for i in range(lote.num_columns))):
                     copia.write_row(linha)
-        pg.execute(sql.SQL("DROP TABLE IF EXISTS {}").format(alvo))
-        pg.execute(sql.SQL("ALTER TABLE {} RENAME TO {}").format(tmp, sql.Identifier(destino)))
+        trocar(pg, "raw_fabric", destino)
     return tabela.num_rows
 
 

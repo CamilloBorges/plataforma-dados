@@ -5,7 +5,8 @@ Segurança do lado do Informix: conexão read-only, isolamento "dirty read" (nã
 locks do ERP) e só "SELECT *" de nomes validados do tabelas.conf.
 
 Cópia completa com troca atômica: a tabela nova é montada como raw_logus.<t>__novo e trocada
-pela antiga na mesma transação, então quem consulta nunca vê tabela vazia ou pela metade.
+pela antiga na mesma transação, então quem consulta nunca vê tabela vazia ou pela metade. A troca
+mantém a tabela (ver ingestao/troca.py) para não quebrar as views do dbt que dependem dela.
 O Informix é lido por JDBC (driver da IBM) dentro da JVM do JPype; os valores seguem como texto
 para o COPY do Postgres, que converte pelo tipo da coluna.
 """
@@ -18,6 +19,8 @@ from pathlib import Path
 
 import psycopg
 from psycopg import sql
+
+from ingestao.troca import trocar
 
 CONF = Path(__file__).with_name("tabelas.conf")
 CONSULTAS = Path(__file__).with_name("consultas")
@@ -143,9 +146,7 @@ def chave_primaria(ifx, tabela: str) -> list[str]:
 
 def copiar(pg: psycopg.Connection, tabela: str, cols: list[tuple[str, str]], pk: list[str], rs) -> int:
     """Grava as linhas do ResultSet em raw_logus.<tabela> com troca atômica; devolve o nº de linhas."""
-    novo = f"{tabela}__novo"
-    alvo = sql.Identifier("raw_logus", tabela)
-    tmp = sql.Identifier("raw_logus", novo)
+    tmp = sql.Identifier("raw_logus", f"{tabela}__novo")
     ddl = sql.SQL(", ").join(sql.SQL("{} {}").format(sql.Identifier(n), sql.SQL(t)) for n, t in cols)
     leitores = [(i, leitor(t)) for i, (_, t) in enumerate(cols, start=1)]
     linhas = 0
@@ -156,14 +157,7 @@ def copiar(pg: psycopg.Connection, tabela: str, cols: list[tuple[str, str]], pk:
             while rs.next():
                 copia.write_row([ler(rs, i) for i, ler in leitores])
                 linhas += 1
-        if pk:
-            pg.execute(sql.SQL("ALTER TABLE {} ADD CONSTRAINT {} PRIMARY KEY ({})").format(
-                tmp, sql.Identifier(f"{tabela}_pkey_novo"), sql.SQL(", ").join(map(sql.Identifier, pk))))
-        pg.execute(sql.SQL("DROP TABLE IF EXISTS {}").format(alvo))
-        pg.execute(sql.SQL("ALTER TABLE {} RENAME TO {}").format(tmp, sql.Identifier(tabela)))
-        if pk:
-            pg.execute(sql.SQL("ALTER TABLE {} RENAME CONSTRAINT {} TO {}").format(
-                alvo, sql.Identifier(f"{tabela}_pkey_novo"), sql.Identifier(f"{tabela}_pkey")))
+        trocar(pg, "raw_logus", tabela, pk)
     return linhas
 
 

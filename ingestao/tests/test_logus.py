@@ -106,12 +106,22 @@ def test_copiar_troca_atomica():
     cols = [("id", "integer"), ("nome", "text"), ("valor", "numeric(10,2)"), ("dia", "date")]
     with psycopg.connect(os.environ["TEST_DB_URL"], autocommit=True) as pg:
         pg.execute("CREATE SCHEMA IF NOT EXISTS raw_logus")
-        pg.execute("DROP TABLE IF EXISTS raw_logus.teste")
-        for rodada in (1, 2):  # a 2ª rodada troca a tabela existente
+        pg.execute("DROP TABLE IF EXISTS raw_logus.teste CASCADE")
+        for rodada in (1, 2):  # a 2ª rodada troca a tabela existente, que tem uma view dependente
             rs = ResultSetFalso([[str(i), f"item {i}  ", Valor("1.5"), Valor("2026-09-29")] for i in range(rodada * 3)])
             assert extrator.copiar(pg, "teste", cols, ["id"], rs) == rodada * 3
+            pg.execute("CREATE OR REPLACE VIEW raw_logus.teste_view AS SELECT id, valor FROM raw_logus.teste")
         assert pg.execute("SELECT count(*), sum(valor), min(nome) FROM raw_logus.teste").fetchone() == (6, Decimal("9.00"), "item 0")
+        assert pg.execute("SELECT count(*) FROM raw_logus.teste_view").fetchone() == (6,)
         pk = pg.execute("SELECT conname FROM pg_constraint WHERE conrelid = 'raw_logus.teste'::regclass AND contype = 'p'").fetchone()
         assert pk == ("teste_pkey",)
         assert pg.execute("SELECT to_regclass('raw_logus.teste__novo')").fetchone() == (None,)
+
+        # A origem ganhou uma coluna: a tabela é recriada e a view dependente cai (o dbt a recria).
+        rs = ResultSetFalso([[str(i), "x", Valor("1.5"), Valor("2026-09-29"), "novo"] for i in range(2)])
+        assert extrator.copiar(pg, "teste", cols + [("extra", "text")], ["id"], rs) == 2
+        assert pg.execute("SELECT count(*), min(extra) FROM raw_logus.teste").fetchone() == (2, "novo")
+        assert pg.execute("SELECT to_regclass('raw_logus.teste_view')").fetchone() == (None,)
+        pk = pg.execute("SELECT conname FROM pg_constraint WHERE conrelid = 'raw_logus.teste'::regclass AND contype = 'p'").fetchone()
+        assert pk == ("teste_pkey",)
         pg.execute("DROP TABLE raw_logus.teste")
