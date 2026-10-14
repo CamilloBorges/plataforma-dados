@@ -62,7 +62,7 @@ select
     f.filial_id,
     fi.filial,
     f.codigo_produto,
-    f.departamento, f.secao, f.grupo, f.subgrupo, f.descricao, f.descricao_completa, f.unidade_medida, f.ativo,
+    f.departamento, f.secao, f.departamento_logus, f.grupo, f.subgrupo, f.descricao, f.descricao_completa, f.unidade_medida, f.ativo,
     f.impostos_entrada, f.impostos_saida, f.preco_venda,
     f.qtd_estoque_inicial, f.custo_inicial, f.data_estoque_inicial, f.origem_estoque_inicial,
     f.qtd_estoque_final, f.custo_final, f.data_estoque_final,
@@ -80,7 +80,21 @@ select
     f.vlr_custo_pessoas, f.vlr_custo_administrativas, f.vlr_custo_embalagem, f.vlr_custo_financeira,
     f.vlr_custo_interveniencia, f.vlr_custo_manutencao, f.vlr_custo_marketing, f.vlr_custo_ocupacao,
     f.vlr_custo_total,
-    f.vlr_margem_quebras - f.vlr_custo_total            as vlr_margem_final,
+    -- Margens em cascata, na ordem do Fabric (14/10/2026): cada uma desconta mais um grupo de despesas.
+    f.vlr_margem_quebras - f.vlr_custo_ocupacao         as vlr_margem_ocupacao,
+    f.vlr_margem_quebras - f.vlr_custo_ocupacao - f.vlr_custo_pessoas as vlr_margem_pessoas,
+    f.vlr_margem_quebras - f.vlr_custo_ocupacao - f.vlr_custo_pessoas - f.vlr_custo_administrativas
+                                                        as vlr_margem_administrativo,
+    f.vlr_margem_quebras - f.vlr_custo_ocupacao - f.vlr_custo_pessoas - f.vlr_custo_administrativas
+        - f.vlr_custo_embalagem                         as vlr_margem_embalagem,
+    f.vlr_margem_quebras - f.vlr_custo_ocupacao - f.vlr_custo_pessoas - f.vlr_custo_administrativas
+        - f.vlr_custo_embalagem - f.vlr_custo_manutencao as vlr_margem_manutencao,
+    f.vlr_margem_quebras - f.vlr_custo_ocupacao - f.vlr_custo_pessoas - f.vlr_custo_administrativas
+        - f.vlr_custo_embalagem - f.vlr_custo_manutencao - f.vlr_custo_marketing as vlr_margem_marketing,
+    f.vlr_margem_quebras - f.vlr_custo_ocupacao - f.vlr_custo_pessoas - f.vlr_custo_administrativas
+        - f.vlr_custo_embalagem - f.vlr_custo_manutencao - f.vlr_custo_marketing
+        - f.vlr_custo_interveniencia                    as vlr_margem_interveniencia,
+    f.vlr_margem_quebras - f.vlr_custo_total            as vlr_margem_final,  -- = depois da financeira
     now()                                               as atualizado_em
 from final f
 left join {{ ref('stg_logus__filiais') }} fi on fi.filial_id = f.filial_id

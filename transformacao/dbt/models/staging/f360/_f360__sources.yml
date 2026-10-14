@@ -16,6 +16,7 @@ sources:
     tables:
       - name: f360_plano_contas
       - name: f360_centro_custo
+      - name: depara_departamento
 
   - name: api
     description: Tabelas do schema api montadas pelo materializar.py (transformacao/api), fora do dbt.

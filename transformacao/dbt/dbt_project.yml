@@ -35,6 +35,11 @@ models:
         - "alter table {{ this }} add primary key (id)"
         - "comment on table {{ this }} is 'dbt: {{ this.name }} (transformacao/dbt)'"
 
+on-run-end:
+  # Lista de departamentos do Directus (infra/postgres/config/05-logus_departamento.sql): inclui os
+  # departamentos novos do Logus a cada dbt build.
+  - "insert into config.logus_departamento (departamento, codigo) select trim(dcr_depto), cdg_depto::int from raw_logus.caddepto where trim(coalesce(dcr_depto, '')) <> '' on conflict (departamento) do update set codigo = excluded.codigo where config.logus_departamento.codigo is distinct from excluded.codigo"
+
 vars:
   # Primeiro mês com estoque do Logus completo no início do mês (o Logus entrou em julho/2026;
   # antes disso o estoque vem do PlenoKW, num modelo próprio).

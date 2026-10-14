@@ -21,11 +21,26 @@ with meses as (
     )::date as mes
 ),
 
+-- Departamento do produto na Rentabilidade: o do Logus, ou o do de/para (config.depara_departamento,
+-- ex.: CAFETERIA redistribuída); a regra com seção vale antes da regra sem seção. O produto levado
+-- fica com a seção = departamento de origem (como no Fabric).
 produtos as (
-    select codigo_produto, departamento, secao, grupo, subgrupo, descricao, descricao_completa,
-           unidade_medida, ativo
-    from {{ source('api', 'vw_produto') }}
-    where origem = 'Logus'
+    select
+        p.codigo_produto,
+        coalesce(d.departamento_destino, p.departamento) as departamento,
+        case when d.departamento_destino is not null then p.departamento else p.secao end as secao,
+        p.departamento                                  as departamento_logus,
+        p.grupo, p.subgrupo, p.descricao, p.descricao_completa, p.unidade_medida, p.ativo
+    from {{ source('api', 'vw_produto') }} p
+    left join lateral (
+        select dd.departamento_destino
+        from {{ source('config', 'depara_departamento') }} dd
+        where dd.departamento_origem = p.departamento
+          and (dd.secao_origem = p.secao or dd.secao_origem is null)
+        order by dd.secao_origem nulls last
+        limit 1
+    ) d on true
+    where p.origem = 'Logus'
 ),
 
 custo_acougue as (
@@ -148,6 +163,7 @@ base as (
         k.codigo_produto,
         p.departamento,
         p.secao,
+        p.departamento_logus,
         p.grupo,
         p.subgrupo,
         p.descricao,
