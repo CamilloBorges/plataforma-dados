@@ -35,9 +35,10 @@ produtos as (
     left join lateral (
         select dd.departamento_destino
         from {{ source('config', 'depara_departamento') }} dd
+        left join {{ source('config', 'logus_secao') }} ls on ls.codigo = dd.secao_origem_id
         where dd.departamento_origem = p.departamento
-          and (dd.secao_origem = p.secao or dd.secao_origem is null)
-        order by dd.secao_origem nulls last
+          and (dd.secao_origem_id is null or (ls.secao = p.secao and ls.departamento = p.departamento))
+        order by dd.secao_origem_id nulls last
         limit 1
     ) d on true
     where p.origem = 'Logus'

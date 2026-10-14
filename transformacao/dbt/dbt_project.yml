@@ -36,9 +36,10 @@ models:
         - "comment on table {{ this }} is 'dbt: {{ this.name }} (transformacao/dbt)'"
 
 on-run-end:
-  # Lista de departamentos do Directus (infra/postgres/config/05-logus_departamento.sql): inclui os
-  # departamentos novos do Logus a cada dbt build.
+  # Listas de departamentos e de seções do Directus (infra/postgres/config/05 e 06): incluem os
+  # departamentos e as seções novos do Logus a cada dbt build (a seção depois do departamento).
   - "insert into config.logus_departamento (departamento, codigo) select trim(dcr_depto), cdg_depto::int from raw_logus.caddepto where trim(coalesce(dcr_depto, '')) <> '' on conflict (departamento) do update set codigo = excluded.codigo where config.logus_departamento.codigo is distinct from excluded.codigo"
+  - "insert into config.logus_secao (codigo, secao, departamento) select s.cdg_secao::int, trim(s.dcr_secao), trim(d.dcr_depto) from raw_logus.cadsecao s join raw_logus.caddepto d on d.cdg_depto = s.cdg_depto where trim(coalesce(s.dcr_secao, '')) <> '' on conflict (codigo) do update set secao = excluded.secao, departamento = excluded.departamento where (config.logus_secao.secao, config.logus_secao.departamento) is distinct from (excluded.secao, excluded.departamento)"
 
 vars:
   # Primeiro mês com estoque do Logus completo no início do mês (o Logus entrou em julho/2026;
