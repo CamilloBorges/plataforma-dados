@@ -36,11 +36,14 @@ def sql_da_view(nome: str) -> str:
 
 def remover_orfas(db_url: str) -> list[str]:
     """Apaga as tabelas api.vw_* que não têm mais .sql na pasta (view removida do repositório).
-    Só toca em api.vw_*: são cópias materializadas, recriáveis a partir dos .sql."""
+    Só toca em api.vw_*: são cópias materializadas, recriáveis a partir dos .sql. As tabelas do dbt
+    (marts, com comentário começando por "dbt:") ficam de fora: quem cuida delas é o dbt."""
     ativas = set(views())
     with psycopg.connect(db_url) as conn:
         existentes = [r[0] for r in conn.execute(
-            "SELECT tablename FROM pg_tables WHERE schemaname = 'api' AND tablename LIKE 'vw\\_%'")]
+            "SELECT tablename FROM pg_tables WHERE schemaname = 'api' AND tablename LIKE 'vw\\_%' "
+            "AND coalesce(obj_description(format('api.%I', tablename)::regclass, 'pg_class'), '') "
+            "NOT LIKE 'dbt:%'")]
         orfas = [t for t in existentes if NOME.match(t) and t not in ativas and not t.endswith("__novo")]
         for t in orfas:
             conn.execute(f"DROP TABLE api.{t}")

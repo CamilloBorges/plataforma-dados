@@ -26,6 +26,15 @@ models:
       +materialized: view
       +schema: stg
 
+    marts:
+      # Tabelas finais no schema "api", lidas pela OData (que só lista api.vw_* com chave primária).
+      # O comentário "dbt: ..." protege a tabela da limpeza de órfãs (transformacao/materializar.py).
+      +materialized: table
+      +schema: api
+      +post-hook:
+        - "alter table {{ this }} add primary key (id)"
+        - "comment on table {{ this }} is 'dbt: {{ this.name }} (transformacao/dbt)'"
+
 vars:
   # Primeiro mês com estoque do Logus completo no início do mês (o Logus entrou em julho/2026;
   # antes disso o estoque vem do PlenoKW, num modelo próprio).

@@ -1,0 +1,18 @@
+version: 2
+
+models:
+  - name: vw_rentabilidade_item
+    description: Rentabilidade por Setor por mês, filial e produto (porta do Gold_FatoItem do Fabric).
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
+      - name: departamento
+        data_tests:
+          - not_null:
+              config:
+                severity: warn
+  - name: vw_rentabilidade_despesas
+    description: Despesas do F360 rateadas por setor (porta do Gold_FatoDespesas do Fabric).
+    columns:
+      - name: id
+        data_tests: [unique, not_null]
