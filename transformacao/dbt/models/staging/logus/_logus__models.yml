@@ -29,3 +29,8 @@ models:
       - dbt_utils.unique_combination_of_columns:
           arguments:
             combination_of_columns: [filial_id, codigo_produto]
+  - name: stg_logus__inventarios_item
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [filial_id, inventario_id, codigo_produto]

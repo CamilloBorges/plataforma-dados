@@ -20,3 +20,13 @@ models:
       # Staging: uma view por fonte, só renomeia, tipa e filtra. Schema "stg".
       +materialized: view
       +schema: stg
+    intermediate:
+      # Regras de negócio que ainda não são a tabela final (ex.: estoque inicial do mês).
+      # Ficam no "stg" para o MCP e a conferência lerem.
+      +materialized: view
+      +schema: stg
+
+vars:
+  # Primeiro mês com estoque do Logus completo no início do mês (o Logus entrou em julho/2026;
+  # antes disso o estoque vem do PlenoKW, num modelo próprio).
+  inicio_logus: "2026-08-01"

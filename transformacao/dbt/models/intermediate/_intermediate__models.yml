@@ -1,0 +1,15 @@
+version: 2
+
+models:
+  - name: int_estoque_inicial_mes
+    description: Estoque inicial do mês por filial e produto (inventário até o dia 5 ou posição do dia 1º).
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [mes, filial_id, codigo_produto]
+    columns:
+      - name: origem
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [inventario, posicao_dia_1]

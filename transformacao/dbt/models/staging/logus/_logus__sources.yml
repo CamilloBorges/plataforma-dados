@@ -17,6 +17,11 @@ sources:
         description: Com val_custo_coml, o custo comercial do dia (ingestao/logus/consultas/estdiapr.sql).
       - name: estmtransfprodint
       - name: estdtransfprodint
+      - name: estmovpr
+      - name: bdominv
+        description: Cabeçalho dos inventários.
+      - name: bdodinv
+        description: Itens dos inventários (qtd_loja = quantidade contada).
       - name: estprfil
       - name: cadfil
       - name: cadprod
