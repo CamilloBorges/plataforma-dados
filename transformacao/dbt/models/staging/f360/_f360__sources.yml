@@ -1,0 +1,18 @@
+version: 2
+
+sources:
+  - name: f360
+    description: Leitura do F360 Finanças feita pela DAG f360_leitura (ingestao/f360). Janela móvel com upsert.
+    schema: raw_f360
+    tables:
+      - name: parcela_titulo
+        description: Parcelas de títulos a pagar e a receber; o JSON da API em "dados" (com o rateio).
+      - name: parcela_cartao
+        description: Parcelas de vendas em cartão mandadas pelas adquirentes; o rateio traz as taxas.
+
+  - name: config
+    description: De/para mantidos no Directus (infra/postgres/config).
+    schema: config
+    tables:
+      - name: f360_plano_contas
+      - name: f360_centro_custo

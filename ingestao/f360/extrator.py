@@ -7,9 +7,11 @@ um POST que troca a chave por um JWT).
 A cada execução relê as parcelas de títulos (contas a pagar e a receber) com vencimento numa
 janela móvel (JANELA_PASSADO dias para trás, JANELA_FUTURO para frente), em janelas de 30 dias
 (limite da API), e grava em raw_f360.parcela_titulo por upsert. O que estava na janela e não
-voltou nesta leitura (excluído no F360) é apagado. O mesmo para as parcelas de cartões (vendas que
-as adquirentes mandam ao F360), pela data da venda dos últimos JANELA_CARTOES dias, em
-raw_f360.parcela_cartao. Cadastros (contas, centros de custo, planos) vão inteiros para
+voltou nesta leitura (excluído no F360) é apagado. As despesas também são relidas pela emissão
+(JANELA_PASSADO dias até hoje), para trazer as parcelas que vencem depois da janela. O mesmo para as parcelas de cartões (vendas que
+as adquirentes mandam ao F360, tipo Receita, e as despesas de cartão, tipo Despesa: aluguel de POS e
+ajustes a débito), pela data da venda dos últimos JANELA_CARTOES dias, em raw_f360.parcela_cartao
+(o tipo fica em dados->>'Tipo'). Cadastros (contas, centros de custo, planos) vão inteiros para
 raw_f360.cadastro.
 """
 import json
@@ -307,7 +309,9 @@ def _cartoes(conn, f360: Cliente, hoje: date) -> dict:
     a função "Parcelas de Cartões" liberada no F360, avisa e segue (os títulos já foram gravados)."""
     inicio = hoje - timedelta(days=JANELA_CARTOES)
     try:
-        itens = [i for i in f360.parcelas("Receita", inicio, hoje, CARTOES, "Venda") if i.get("ParcelaId")]
+        # Receita: as vendas (com a taxa no rateio); Despesa: aluguel de POS e ajustes a débito, que
+        # entram nas despesas da Rentabilidade por Setor.
+        itens = [i for tipo in TIPOS for i in f360.parcelas(tipo, inicio, hoje, CARTOES, "Venda") if i.get("ParcelaId")]
     except RuntimeError as e:
         if "não liberado" not in str(e).lower():
             raise
@@ -322,6 +326,23 @@ def _cartoes(conn, f360: Cliente, hoje: date) -> dict:
             (inicio, hoje, visto)).rowcount
     log.info("F360: cartões %d parcelas (%d apagadas)", len(itens), apagadas)
     return {"parcelas_cartao": len(itens), "apagadas_cartao": apagadas}
+
+
+def _despesas_por_emissao(conn, f360: Cliente, inicio: date, hoje: date) -> dict:
+    """Relê as despesas pela EMISSÃO do título (de `inicio` a hoje). A Rentabilidade por Setor soma
+    as despesas pelo mês da emissão, com todas as parcelas; as parcelas que vencem depois da janela
+    por vencimento (JANELA_FUTURO) só chegam por aqui (ex.: compra de 6 parcelas)."""
+    itens = f360.parcelas("Despesa", inicio, hoje, tipo_datas="Emissao")
+    with conn.transaction():
+        visto = conn.execute("SELECT clock_timestamp()").fetchone()[0]
+        with conn.cursor() as cur:
+            cur.executemany(UPSERT, [{**linha(i), "visto_em": visto} for i in itens])
+        apagadas = conn.execute(
+            "DELETE FROM raw_f360.parcela_titulo WHERE tipo = 'Despesa' "
+            "AND (dados -> 'DadosDoTitulo' ->> 'Emissao')::date BETWEEN %s AND %s AND visto_em < %s",
+            (inicio, hoje, visto)).rowcount
+    log.info("F360: despesas por emissão %d parcelas (%d apagadas)", len(itens), apagadas)
+    return {"parcelas_despesa_emissao": len(itens), "apagadas_despesa_emissao": apagadas}
 
 
 def executar(db_url: str, api_key: str, hoje: date | None = None, cliente: Cliente | None = None) -> dict:
@@ -353,6 +374,7 @@ def executar(db_url: str, api_key: str, hoje: date | None = None, cliente: Clien
                 contagem[f"parcelas_{tipo.lower()}"] = len(itens)
                 contagem[f"apagadas_{tipo.lower()}"] = apagadas
                 log.info("F360: %s %d parcelas (%d apagadas)", tipo, len(itens), apagadas)
+            contagem.update(_despesas_por_emissao(conn, f360, inicio, hoje))
             contagem.update(_cartoes(conn, f360, hoje))
             conn.execute("UPDATE raw_f360.execucao SET fim = now(), status = 'ok', contagem = %s WHERE id = %s",
                          (json.dumps(contagem), execucao))

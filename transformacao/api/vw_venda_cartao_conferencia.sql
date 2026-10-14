@@ -28,6 +28,7 @@ f360 AS (
          count(*) FILTER (WHERE NOT coalesce(conciliado_pdv, false))   AS pendentes_conciliacao_pdv
   FROM raw_f360.parcela_cartao
   WHERE NOT coalesce(cancelada, false)
+    AND coalesce(dados ->> 'Tipo', 'Receita') = 'Receita'  -- sem as despesas (aluguel de POS, ajustes)
   GROUP BY 1, 2
 )
 SELECT
