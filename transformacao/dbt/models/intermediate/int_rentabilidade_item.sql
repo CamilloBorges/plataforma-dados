@@ -4,11 +4,15 @@
 --   * estoque inicial pela regra do Camillo (int_estoque_inicial_mes) e final pela posição do fim do
 --     mês (int_estoque_final_mes);
 --   * custo zerado trocado pelo último custo positivo do produto ATÉ a data, na própria filial e,
---     se não houver, na filial 1 (o Fabric pegava o último da filial 1 de todo o histórico).
--- Reproduzido como no Fabric, a rever depois da conferência:
---   * quantidade comprada em EMBALAGENS (qtd_de_embal), sem multiplicar pela quantidade por embalagem;
---   * compras pela emissão E pela entrada no mesmo mês;
---   * CMV = quantidade vendida × custo FINAL; quebra atualizada = quantidade × custo final.
+--     se não houver, na filial 1 (o Fabric pegava o último da filial 1 de todo o histórico);
+--   * compras pelo mês da EMISSÃO da nota (Camillo, 14/10/2026: a data de entrada no Logus é a do
+--     lançamento, não a da chegada física). O Fabric exigia emissão e entrada no mesmo mês;
+--   * quantidade comprada = embalagens × quantidade por embalagem. Hoje dá o mesmo que o Fabric: em
+--     todas as notas desde 02/2026 a quantidade por embalagem é 1 (o lançamento no Logus já converte).
+-- Regras do Camillo mantidas (14/10/2026):
+--   * CMV = quantidade vendida × custo FINAL do mês ("custo da última nota"); quebra atualizada =
+--     quantidade × custo final. No açougue, o custo médio do mês (Fabric);
+--   * estoque final = posição do fim do mês (a regra do inventário até o dia 5 é só do inicial).
 with meses as (
     select generate_series(
         date '{{ var("inicio_logus") }}',
@@ -60,17 +64,16 @@ vendas as (
 
 compras as (
     select
-        date_trunc('month', c.data_entrada)::date       as mes,
+        date_trunc('month', c.data_emissao)::date       as mes,
         c.filial_id,
         c.codigo_produto,
-        sum(c.quantidade)                               as qtd_comprada,
+        sum(c.quantidade * c.quantidade_embalagem)      as qtd_comprada,
         sum(c.valor_total)                              as vlr_comprado,
         sum(round(coalesce(c.valor_icms, 0) + coalesce(c.valor_pis, 0) + coalesce(c.valor_cofins, 0)
                   + coalesce(c.valor_fcp, 0), 2))       as vlr_impostos_compras
     from {{ ref('stg_logus__compras_item') }} c
     where c.situacao_nota = 3
-      and date_trunc('month', c.data_emissao) = date_trunc('month', c.data_entrada)
-      and c.data_entrada >= date '{{ var("inicio_logus") }}'
+      and c.data_emissao >= date '{{ var("inicio_logus") }}'
     group by 1, 2, 3
 ),
 
